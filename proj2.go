@@ -155,11 +155,13 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	//Marshal, encrypt, HMAC, and store User struct
 	marshalledStruct, _ := json.Marshal(userdata)
-	encryptedStruct := userlib.SymEnc(structEncKey, userlib.RandomBytes(16), marshalledStruct)
-	structHMAC, _ := userlib.HMACEval(structHMACKey, encryptedStruct)
+	encryptedStruct, err := EncryptThenMAC(marshalledStruct, structEncKey, structHMACKey)
+	if err != nil {
+		return nil, err
+	}
 
 	structUUIDHMAC, _ := userlib.HMACEval(make([]byte, 16), []byte(username + "struct"))
-	userlib.DatastoreSet(bytesToUUID(structUUIDHMAC), append(encryptedStruct, structHMAC...))
+	userlib.DatastoreSet(bytesToUUID(structUUIDHMAC), encryptedStruct)
 
 	//Store password hash on Datastore
 	passwordHash := userlib.Argon2Key([]byte(password), []byte(username), 16)
@@ -207,7 +209,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	if !ok {
 		return nil, errors.New("User data corrupted")
 	}
-	marshalledStruct, err := MACthenDecrypt(encryptedStruct, structEncKey, structHMACKey)
+	marshalledStruct, err := MACThenDecrypt(encryptedStruct, structEncKey, structHMACKey)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +293,17 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 }
 
 
-func MACthenDecrypt(ciphertext []byte, encKey []byte, HMACKey []byte) (plaintext []byte, err error) {
+func EncryptThenMAC(plaintext []byte, encKey []byte, HMACKey []byte) (ciphtertext []byte, err error) {
+	ciphertext := userlib.SymEnc(encKey, userlib.RandomBytes(16), plaintext)
+	MAC, err := userlib.HMACEval(HMACKey, ciphertext)
+	if err != nil {
+		return nil, errors.New("HMAC failed!")
+	}
+	return append(ciphertext, MAC...), nil
+}
+
+
+func MACThenDecrypt(ciphertext []byte, encKey []byte, HMACKey []byte) (plaintext []byte, err error) {
 	ciphertextLen := len(ciphertext)
 	if ciphertextLen <= 64 {
 		return nil, errors.New("Ciphertext invalid")
