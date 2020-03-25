@@ -148,16 +148,9 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdata.SharedUsersMap = make(map[string][]string)
 
 	//Generate encryption and HMAC keys for User struct
-	masterKey := userlib.Argon2Key([]byte(password), []byte(username + "MasterKey"), 16)
-	structEncKey, err := userlib.HashKDF(masterKey, []byte("encryption"))
-	structEncKey = structEncKey[:16]
+	structEncKey, structHMACKey, err := GenerateStructKeys(username, password)
 	if err != nil {
-		return nil, errors.New("HKDF failed!")
-	}
-	structHMACKey, err := userlib.HashKDF(masterKey, []byte("HMAC"))
-	structHMACKey = structHMACKey[:16]
-	if err != nil {
-		return nil, errors.New("HKDF failed!")
+		return nil, err
 	}
 
 	//Marshal, encrypt, HMAC, and store User struct
@@ -182,6 +175,45 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 func GetUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
+
+	//Authenticate user
+	passwordUUIDHMAC, err := userlib.HMACEval(make([]byte, 16), []byte(username + "password"))
+	if err != nil {
+		return nil, errors.New("HMAC Failed")
+	}
+	passwordUUID := bytesToUUID(passwordUUIDHMAC)
+	passwordHash, ok := userlib.DatastoreGet(passwordUUID)
+	if !ok {
+		return nil, errors.New("User not found")
+	}
+
+	inputHash := userlib.Argon2Key([]byte(password), []byte(username), 16)
+	if !testEq(inputHash, passwordHash) {
+		return nil, errors.New("Password incorrect or data corrupted")
+	}
+
+	//Generate decryption and HMAC keys for User struct
+	structEncKey, structHMACKey, err := GenerateStructKeys(username, password)
+	if err != nil {
+		return nil, err
+	}
+
+	//Retrieve, authenticate, decrypt, and unmarshal User struct
+	structUUIDHMAC, err := userlib.HMACEval(make([]byte, 16), []byte(username + "struct"))
+	if err != nil {
+		return nil, errors.New("HMAC failed!")
+	}
+	encryptedStruct, ok := userlib.DatastoreGet(bytesToUUID(structUUIDHMAC))
+	if !ok {
+		return nil, errors.New("User data corrupted")
+	}
+	marshalledStruct, err := MACthenDecrypt(encryptedStruct, structEncKey, structHMACKey)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(marshalledStruct, userdataptr); err != nil {
+		return nil, errors.New("Unmarshalling User struct failed!")
+	}
 
 	return userdataptr, nil
 }
@@ -256,4 +288,57 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 // Removes target user's access.
 func (userdata *User) RevokeFile(filename string, target_username string) (err error) {
 	return
+}
+
+
+func MACthenDecrypt(ciphertext []byte, encKey []byte, HMACKey []byte) (plaintext []byte, err error) {
+	ciphertextLen := len(ciphertext)
+	if ciphertextLen <= 64 {
+		return nil, errors.New("Ciphertext invalid")
+	}
+	ciphertext, cipherHMAC := ciphertext[:ciphertextLen-64], ciphertext[ciphertextLen-64:]
+	calculatedHMAC, err := userlib.HMACEval(HMACKey, ciphertext)
+	if err != nil {
+		return nil, errors.New("HMAC failed")
+	}
+	if !userlib.HMACEqual(calculatedHMAC, cipherHMAC) {
+		return nil, errors.New("HMAC did not match")
+	}
+	plaintext = userlib.SymDec(encKey, ciphertext)
+	return plaintext, nil
+}
+
+
+func GenerateStructKeys(username string, password string) (encKey []byte, HMACKey []byte, err error) {
+	masterKey := userlib.Argon2Key([]byte(password), []byte(username + "MasterKey"), 16)
+	structEncKey, err := userlib.HashKDF(masterKey, []byte("encryption"))
+	structEncKey = structEncKey[:16]
+	if err != nil {
+		return nil, nil, errors.New("HKDF failed!")
+	}
+	structHMACKey, err := userlib.HashKDF(masterKey, []byte("HMAC"))
+	structHMACKey = structHMACKey[:16]
+	if err != nil {
+		return nil, nil, errors.New("HKDF failed!")
+	}
+	return structEncKey, structHMACKey, nil	
+}
+
+
+// Returns whether two byte slices are equal
+func testEq(a, b []byte) bool {
+	if (a == nil) != (b == nil) { 
+        return false; 
+    }
+
+    if len(a) != len(b) {
+        return false
+    }
+
+    for i := range a {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
 }
