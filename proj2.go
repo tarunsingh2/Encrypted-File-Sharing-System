@@ -86,6 +86,14 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 type User struct {
 	Username string
 
+	PrivateDecKey userlib.PKEDecKey
+	PrivateSignKey userlib.DSSignKey
+
+	EncKeysMap map[string][]byte
+	HMACKeysMap map[string][]byte
+	UUIDMap map[string]uuid.UUID
+	OriginalOwnerMap map[string]string
+	SharedUsersMap map[string][]string
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
@@ -110,9 +118,60 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
 
-	//TODO: This is a toy implementation.
+	// Generate public keys
+	encKey, decKey, err := userlib.PKEKeyGen()
+	if err != nil {
+		return nil, errors.New("PKEKeyGen failed!")
+	}
+
+	signKey, verifyKey, err := userlib.DSKeyGen()
+	if err != nil {
+		return nil, errors.New("DSKeyGen failed!")
+	}
+
+	//Store public keys on Keystore
+	if err := userlib.KeystoreSet(username + "EncKey", encKey); err != nil {
+		return nil, errors.New("Storing encryption key failed!")
+	}
+	if err := userlib.KeystoreSet(username + "VerifyKey", verifyKey); err != nil {
+		return nil, errors.New("Storing verification key failed!")
+	}
+
+	//Initialize User struct
 	userdata.Username = username
-	//End of toy implementation
+	userdata.PrivateDecKey = decKey
+	userdata.PrivateSignKey = signKey
+	userdata.EncKeysMap = make(map[string][]byte)
+	userdata.HMACKeysMap = make(map[string][]byte)
+	userdata.UUIDMap = make(map[string]uuid.UUID)
+	userdata.OriginalOwnerMap = make(map[string]string)
+	userdata.SharedUsersMap = make(map[string][]string)
+
+	//Generate encryption and HMAC keys for User struct
+	masterKey := userlib.Argon2Key([]byte(password), []byte(username + "MasterKey"), 16)
+	structEncKey, err := userlib.HashKDF(masterKey, []byte("encryption"))
+	structEncKey = structEncKey[:16]
+	if err != nil {
+		return nil, errors.New("HKDF failed!")
+	}
+	structHMACKey, err := userlib.HashKDF(masterKey, []byte("HMAC"))
+	structHMACKey = structHMACKey[:16]
+	if err != nil {
+		return nil, errors.New("HKDF failed!")
+	}
+
+	//Marshal, encrypt, HMAC, and store User struct
+	marshalledStruct, _ := json.Marshal(userdata)
+	encryptedStruct := userlib.SymEnc(structEncKey, userlib.RandomBytes(16), marshalledStruct)
+	structHMAC, _ := userlib.HMACEval(structHMACKey, encryptedStruct)
+
+	structUUIDHMAC, _ := userlib.HMACEval(make([]byte, 16), []byte(username + "struct"))
+	userlib.DatastoreSet(bytesToUUID(structUUIDHMAC), append(encryptedStruct, structHMAC...))
+
+	//Store password hash on Datastore
+	passwordHash := userlib.Argon2Key([]byte(password), []byte(username), 16)
+	passwordUUIDHMAC, _ := userlib.HMACEval(make([]byte, 16), []byte(username + "password"))
+	userlib.DatastoreSet(bytesToUUID(passwordUUIDHMAC), passwordHash)
 
 	return &userdata, nil
 }
