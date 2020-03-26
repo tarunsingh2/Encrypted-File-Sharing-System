@@ -221,7 +221,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	//Fetch stored user struct and update local copy
 	storedUser, err := GetUser(userdata.Username, userdata.password)
 	if err != nil {
-		return nil, err
+		return
 	}
 	*userdata = *storedUser
 
@@ -240,18 +240,26 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		userdata.SharedUsersMap[filename] = make([]string, 0)
 
 		//Store encrypted file on datastore
-		ciphertext, _ := EncryptThenMAC(data, fileEncKey, fileHMACKey)
+		ciphertext, err := EncryptThenMAC(data, fileEncKey, fileHMACKey)
+		if err != nil {
+			return
+		}
 		userlib.DatastoreSet(fileUUID, ciphertext)
 
 		//Store updated User struct on Datastore
-		StoreUserStruct(userdata)
+		if err := StoreUserStruct(userdata); err != nil {
+			return
+		}
 
 	} else {
 		//If yes, get keys, UUID from user struct
 		fileEncKey, fileHMACKey := userdata.EncKeysMap[filename], userdata.HMACKeysMap[filename]
 
 		//Store encrypted file on datastore
-		ciphertext, _ := EncryptThenMAC(data, fileEncKey, fileHMACKey)
+		ciphertext, err := EncryptThenMAC(data, fileEncKey, fileHMACKey)
+		if err != nil {
+			return
+		}
 		userlib.DatastoreSet(fileUUID, ciphertext)
 	}
 
@@ -301,7 +309,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		return nil, errors.New("Datastore corrupted, file not found")
 	}
 
-	data, err := MACThenDecrypt(encryptedFile, fileEncKey, fileHMACKey)
+	data, err = MACThenDecrypt(encryptedFile, fileEncKey, fileHMACKey)
 	if err != nil {
 		return nil, errors.New("File corrupted")
 	}
