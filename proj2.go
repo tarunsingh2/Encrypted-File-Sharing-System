@@ -90,8 +90,6 @@ type User struct {
 	PrivateDecKey userlib.PKEDecKey
 	PrivateSignKey userlib.DSSignKey
 
-	//EncKeysMap map[string][]byte
-	//HMACKeysMap map[string][]byte
 	UUIDMap map[string]uuid.UUID
 	OriginalOwnerMap map[string]string
 	SharedUsersMap map[string][]string
@@ -143,8 +141,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdata.password = password
 	userdata.PrivateDecKey = decKey
 	userdata.PrivateSignKey = signKey
-	//userdata.EncKeysMap = make(map[string][]byte)
-	//userdata.HMACKeysMap = make(map[string][]byte)
 	userdata.UUIDMap = make(map[string]uuid.UUID)
 	userdata.OriginalOwnerMap = make(map[string]string)
 	userdata.SharedUsersMap = make(map[string][]string)
@@ -233,8 +229,6 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		fileUUID = bytesToUUID(userlib.RandomBytes(16))
 
 		//Store in map
-		//userdata.EncKeysMap[filename] = fileEncKey
-		//userdata.HMACKeysMap[filename] = fileHMACKey
 		userdata.UUIDMap[filename] = fileUUID
 		userdata.OriginalOwnerMap[filename] = userdata.Username
 		userdata.SharedUsersMap[filename] = make([]string, 0)
@@ -260,9 +254,6 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		if err != nil {
 			return
 		}
-
-		//Get keys from user struct
-		//fileEncKey, fileHMACKey := userdata.EncKeysMap[filename], userdata.HMACKeysMap[filename]
 
 		//Store encrypted file on datastore
 		ciphertext, err := EncryptThenMAC(data, fileEncKey, fileHMACKey)
@@ -308,16 +299,6 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		return nil, err
 	}
 
-	// fileEncKey, ok := userdata.EncKeysMap[filename]
-	// if !ok {
-	// 	return nil, errors.New("File not found")
-	// }
-
-	// fileHMACKey, ok := userdata.HMACKeysMap[filename]
-	// if !ok {
-	// 	return nil, errors.New("File not found")
-	// }
-
 	//Get encrypted file from Datastore, decrypt/authenticate with keys
 	encryptedFile, ok := userlib.DatastoreGet(fileUUID)
 	if !ok {
@@ -344,16 +325,53 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // should be able to know the sender.
 func (userdata *User) ShareFile(filename string, recipient string) (
 	magic_string string, err error) {
-
-
 	//Fetch stored User struct and update local copy
-	//Get UUID, keys for file
-	//Encrypt symmetric file keys with recipient's public key and store on datastore
-	//Encrypt and sign UUID + original owner ---> magic_string
-	//Add recipient to shared users map in User struct
-	//Store User struct on Datastore
+	storedUser, err := GetUser(userdata.Username, userdata.password)
+	if err != nil {
+		return "", err
+	}
+	*userdata = *storedUser
 
-	return
+	//Get keys for file from datastore
+	fileUUID, ok := userdata.UUIDMap[filename]
+	if !ok {
+		return "", errors.New("File not found")
+	}
+	originalOwner, ok := userdata.OriginalOwnerMap[filename]
+	if !ok {
+		return "", errors.New("File not found")
+	}
+	fileEncKey, fileHMACKey, err := userdata.GetKeys(originalOwner, fileUUID)
+	if err != nil {
+		return "", err
+	}
+
+	//Encrypt symmetric file keys with recipient's public key and store on datastore
+	if err = userdata.StoreKeys(recipient, fileEncKey, fileHMACKey, fileUUID); err != nil {
+		return "", err
+	}
+
+	//Encrypt and sign UUID + original owner ---> magic_string
+	magic_bytes, err := userdata.EncryptThenSign(append(fileUUID[:], []byte(originalOwner)...), recipient)
+	if err != nil {
+		return "", err
+	}
+	magic_string = string(magic_bytes)
+
+	//Add recipient to shared users map in User struct
+	userdata.SharedUsersMap[filename] = append(userdata.SharedUsersMap[filename], recipient)
+
+	//Store User struct on Datastore
+	if err = StoreUserStruct(userdata); err != nil {
+		return "", err
+	}
+
+	//Store shared user list for file on Datastore
+	if err = StoreSharedUsersList(userdata, originalOwner, filename); err != nil {
+		return "", err
+	}
+
+	return magic_string, nil
 }
 
 // Note recipient's filename can be different from the sender's filename.
@@ -362,11 +380,44 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string,
 	magic_string string) error {
+	//Fetch stored User struct and update local copy
+	storedUser, err := GetUser(userdata.Username, userdata.password)
+	if err != nil {
+		return err
+	}
+	*userdata = *storedUser
+
+	//Check if user already has a file with this name
+	_, ok := userdata.UUIDMap[filename]
+	if ok {
+		return errors.New("User already has a file with this name")
+	}
 
 	//Verify and decrypt magic_string ----> UUID + original owner
-	//Verify and decrypt file symmetric keys from Datastore
-	//Update User struct maps
+	plaintext, err := userdata.VerifyThenDecrypt([]byte(magic_string), sender)
+	if err != nil {
+		return err
+	}
+	fileUUID, originalOwner := bytesToUUID(plaintext[:16]), string(plaintext[16:])
 
+	//Get symmetric keys from datastore
+	fileEncKey, fileHMACKey, err := userdata.GetKeys(originalOwner, fileUUID)
+	if err != nil {
+		return err
+	}
+
+	//Reupload symmetric keys encrypted for self
+	userdata.StoreKeys(userdata.Username, fileEncKey, fileHMACKey, fileUUID)
+
+	//Update User struct maps
+	userdata.UUIDMap[filename] = fileUUID
+	userdata.OriginalOwnerMap[filename] = userdata.Username
+	userdata.SharedUsersMap[filename] = make([]string, 0)
+
+	//Store updated user struct on datastore
+	if err = StoreUserStruct(userdata); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -410,25 +461,36 @@ func (userdata *User) GetKeys(sender string, fileUUID uuid.UUID) (fileEncKey []b
 	if !ok {
 		return nil, nil, errors.New("Keys not found")
 	}
-	ciphertext, signature := encryptedKeys[:len(encryptedKeys)-256], encryptedKeys[len(encryptedKeys)-256:]
 
 	//Verify then decrypt keys (could be signed by either self or sender)
-	selfVerifyKey, _ := userlib.KeystoreGet(userdata.Username + "VerifyKey")
-	senderVerifyKey, _ := userlib.KeystoreGet(sender + "VerifyKey")
-	if err = userlib.DSVerify(selfVerifyKey, ciphertext, signature); err != nil {
-		if err = userlib.DSVerify(senderVerifyKey, ciphertext, signature); err != nil {
-			return nil, nil, errors.New("Encrypted keys corrupted - Could not verify")
-		}
-	}
-	keys, err := userlib.PKEDec(userdata.PrivateDecKey, ciphertext)
+	keys, err := userdata.VerifyThenDecrypt(encryptedKeys, sender)
 	if err != nil {
-		return nil, nil, errors.New("Encrypted keys corrupted - Could not decrypt")
+		return nil, nil, err
 	}
 
-	userlib.DebugMsg(string(len(keys)))
 	return keys[:16], keys[16:], nil
 }
 
+func StoreSharedUsersList(userdata *User, originalOwner string, filename string) (err error) {
+	//Generate UUID to store list at
+	fileUUID, _ := userdata.UUIDMap[filename]
+	uuidHMAC, err := userlib.HMACEval(make([]byte, 16), append([]byte(userdata.Username + "UserList"), fileUUID[:]...))
+	if err != nil {
+		return err
+	}
+	listUUID := bytesToUUID(uuidHMAC)
+
+	//Marshall, encrypt and sign for original owner
+	marshalledList, err := json.Marshal(userdata.SharedUsersMap[filename])
+	encryptedList, err := userdata.EncryptThenSign(marshalledList, originalOwner)
+	if err != nil {
+		return err
+	}
+
+	//Store on datastore
+	userlib.DatastoreSet(listUUID, encryptedList)
+	return nil
+}
 
 func StoreUserStruct(userdata *User) (err error) {
 	//Generate encryption and HMAC keys for User struct
@@ -454,6 +516,28 @@ func StoreUserStruct(userdata *User) (err error) {
 	userlib.DatastoreSet(bytesToUUID(structUUIDHMAC), encryptedStruct)
 
 	return nil
+}
+
+
+func (userdata *User) VerifyThenDecrypt(ciphertext []byte, sender string) (plaintext []byte, err error){
+	if len(ciphertext) <= 256 {
+		return nil, errors.New("Ciphertext corrupted")
+	}
+
+	ciphertext, signature := ciphertext[:len(ciphertext)-256], ciphertext[len(ciphertext)-256:]
+
+	selfVerifyKey, _ := userlib.KeystoreGet(userdata.Username + "VerifyKey")
+	senderVerifyKey, _ := userlib.KeystoreGet(sender + "VerifyKey")
+	if err = userlib.DSVerify(selfVerifyKey, ciphertext, signature); err != nil {
+		if err = userlib.DSVerify(senderVerifyKey, ciphertext, signature); err != nil {
+			return nil, errors.New("Encrypted data corrupted - Could not verify")
+		}
+	}
+	plaintext, err = userlib.PKEDec(userdata.PrivateDecKey, ciphertext)
+	if err != nil {
+		return nil, errors.New("Encrypted data corrupted - Could not decrypt")
+	}
+	return plaintext, nil
 }
 
 
