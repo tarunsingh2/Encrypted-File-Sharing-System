@@ -217,7 +217,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // The plaintext of the filename + the plaintext and length of the filename 
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
-	
+
 	//Fetch stored user struct and update local copy
 	storedUser, err := GetUser(userdata.Username, userdata.password)
 	if err != nil {
@@ -270,17 +270,41 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 // It should give an error if the file is corrupted in any way.
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 
-	//TODO: This is a toy implementation.
-	UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
-	packaged_data, ok := userlib.DatastoreGet(UUID)
-	if !ok {
-		return nil, errors.New(strings.ToTitle("File not found!"))
+	//Fetch stored User struct and update local copy
+	storedUser, err := GetUser(userdata.Username, userdata.password)
+	if err != nil {
+		return nil, err
 	}
-	json.Unmarshal(packaged_data, &data)
-	return data, nil
-	//End of toy implementation
+	*userdata = *storedUser
 
-	return
+	//Access file UUID and keys from User struct
+	fileUUID, ok := userdata.UUIDMap[filename]
+	if !ok {
+		return nil, errors.New("File not found")
+	}
+
+	fileEncKey, ok := userdata.EncKeysMap[filename]
+	if !ok {
+		return nil, errors.New("File not found")
+	}
+
+	fileHMACKey, ok := userdata.HMACKeysMap[filename]
+	if !ok {
+		return nil, errors.New("File not found")
+	}
+
+	//Get encrypted file from Datastore, decrypt/authenticate with keys
+	encryptedFile, ok := userlib.DatastoreGet(fileUUID)
+	if !ok {
+		return nil, errors.New("Datastore corrupted, file not found")
+	}
+
+	data, err := MACThenDecrypt(encryptedFile, fileEncKey, fileHMACKey)
+	if err != nil {
+		return nil, errors.New("File corrupted")
+	}
+
+	return data, nil
 }
 
 // This creates a sharing record, which is a key pointing to something
