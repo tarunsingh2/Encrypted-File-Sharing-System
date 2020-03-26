@@ -236,6 +236,8 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		userdata.EncKeysMap[filename] = fileEncKey
 		userdata.HMACKeysMap[filename] = fileHMACKey
 		userdata.UUIDMap[filename] = fileUUID
+		userdata.OriginalOwnerMap[filename] = userdata.Username
+		userdata.SharedUsersMap[filename] = make([]string, 0)
 
 		//Store encrypted file on datastore
 		ciphertext, _ := EncryptThenMAC(data, fileEncKey, fileHMACKey)
