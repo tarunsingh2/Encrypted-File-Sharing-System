@@ -85,6 +85,7 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 // The structure definition for a user record
 type User struct {
 	Username string
+	password string
 
 	PrivateDecKey userlib.PKEDecKey
 	PrivateSignKey userlib.DSSignKey
@@ -139,6 +140,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	//Initialize User struct
 	userdata.Username = username
+	userdata.password = password
 	userdata.PrivateDecKey = decKey
 	userdata.PrivateSignKey = signKey
 	userdata.EncKeysMap = make(map[string][]byte)
@@ -147,21 +149,10 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdata.OriginalOwnerMap = make(map[string]string)
 	userdata.SharedUsersMap = make(map[string][]string)
 
-	//Generate encryption and HMAC keys for User struct
-	structEncKey, structHMACKey, err := GenerateStructKeys(username, password)
-	if err != nil {
+	//Store User struct on Datastore
+	if err := StoreUserStruct(userdataptr); err != nil {
 		return nil, err
 	}
-
-	//Marshal, encrypt, HMAC, and store User struct
-	marshalledStruct, _ := json.Marshal(userdata)
-	encryptedStruct, err := EncryptThenMAC(marshalledStruct, structEncKey, structHMACKey)
-	if err != nil {
-		return nil, err
-	}
-
-	structUUIDHMAC, _ := userlib.HMACEval(make([]byte, 16), []byte(username + "struct"))
-	userlib.DatastoreSet(bytesToUUID(structUUIDHMAC), encryptedStruct)
 
 	//Store password hash on Datastore
 	passwordHash := userlib.Argon2Key([]byte(password), []byte(username), 16)
@@ -177,6 +168,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 func GetUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
+	userdata.password = password
 
 	//Authenticate user
 	passwordUUIDHMAC, err := userlib.HMACEval(make([]byte, 16), []byte(username + "password"))
@@ -225,12 +217,41 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // The plaintext of the filename + the plaintext and length of the filename 
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
+	
+	//Fetch stored user struct and update local copy
+	storedUser, err := GetUser(userdata.Username, userdata.password)
+	if err != nil {
+		return nil, err
+	}
+	*userdata = *storedUser
 
-	//TODO: This is a toy implementation.
-	UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
-	packaged_data, _ := json.Marshal(data)
-	userlib.DatastoreSet(UUID, packaged_data)
-	//End of toy implementation
+	//Check if filename already exists
+	fileUUID, ok := userdata.UUIDMap[filename]
+	if !ok {
+		//If no, generate random keys, random UUID
+		fileEncKey, fileHMACKey := userlib.RandomBytes(16), userlib.RandomBytes(16)
+		fileUUID = bytesToUUID(userlib.RandomBytes(16))
+
+		//Store in map
+		userdata.EncKeysMap[filename] = fileEncKey
+		userdata.HMACKeysMap[filename] = fileHMACKey
+		userdata.UUIDMap[filename] = fileUUID
+
+		//Store encrypted file on datastore
+		ciphertext, _ := EncryptThenMAC(data, fileEncKey, fileHMACKey)
+		userlib.DatastoreSet(fileUUID, ciphertext)
+
+		//Store updated User struct on Datastore
+		StoreUserStruct(userdata)
+
+	} else {
+		//If yes, get keys, UUID from user struct
+		fileEncKey, fileHMACKey := userdata.EncKeysMap[filename], userdata.HMACKeysMap[filename]
+
+		//Store encrypted file on datastore
+		ciphertext, _ := EncryptThenMAC(data, fileEncKey, fileHMACKey)
+		userlib.DatastoreSet(fileUUID, ciphertext)
+	}
 
 	return
 }
@@ -290,6 +311,33 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 // Removes target user's access.
 func (userdata *User) RevokeFile(filename string, target_username string) (err error) {
 	return
+}
+
+
+func StoreUserStruct(userdata *User) (err error) {
+	//Generate encryption and HMAC keys for User struct
+	structEncKey, structHMACKey, err := GenerateStructKeys(userdata.Username, userdata.password)
+	if err != nil {
+		return err
+	}
+
+	//Marshal, encrypt, HMAC, and store User struct
+	marshalledStruct, err := json.Marshal(userdata)
+	if err != nil {
+		return err
+	}
+	encryptedStruct, err := EncryptThenMAC(marshalledStruct, structEncKey, structHMACKey)
+	if err != nil {
+		return err
+	}
+
+	structUUIDHMAC, err := userlib.HMACEval(make([]byte, 16), []byte(userdata.Username + "struct"))
+	if err != nil {
+		return err
+	}
+	userlib.DatastoreSet(bytesToUUID(structUUIDHMAC), encryptedStruct)
+
+	return nil
 }
 
 
