@@ -280,7 +280,56 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 // existing file, but only whatever additional information and
 // metadata you need.
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
-	return
+
+	//Fetch updated user struct and update local copy
+	storedUser, err := GetUser(userdata.Username, userdata.password)
+	if err != nil {
+		return err
+	}
+	*userdata = *storedUser
+
+	//Make sure file exists
+	fileHeaderUUID, ok := userdata.UUIDMap[filename]
+	if !ok {
+		return errors.New("File not found")
+	}
+
+	//Get symmetric file keys from datastore
+	fileEncKey, fileHMACKey, err := userdata.GetKeys(userdata.OriginalOwnerMap[filename], fileHeaderUUID)
+	if err != nil {
+		return err
+	}
+
+	//Get header from datastore
+	encryptedHeader, ok := userlib.DatastoreGet(fileHeaderUUID)
+	if !ok {
+		return errors.New("Datastore corrupted, file header not found")
+	}
+
+	header, err := MACThenDecrypt(encryptedHeader, fileEncKey, fileHMACKey)
+	if err != nil {
+		return errors.New("File header corrupted")
+	}
+
+	//Encrypt and store data at random UUID
+	fileDataUUID := bytesToUUID(userlib.RandomBytes(16))
+	ciphertext, err := EncryptThenMAC(data, fileEncKey, fileHMACKey)
+	if err != nil {
+		return err
+	}
+	userlib.DatastoreSet(fileDataUUID, ciphertext)
+
+	//Add UUID of addition to header
+	header = append(header, fileDataUUID[:]...)
+
+	//Reencrypt and store header on datastore
+	ciphertext, err = EncryptThenMAC(header, fileEncKey, fileHMACKey)
+	if err != nil {
+		return err
+	}
+	userlib.DatastoreSet(fileHeaderUUID, ciphertext)
+
+	return nil
 }
 
 // This loads a file from the Datastore.
