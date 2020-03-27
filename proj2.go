@@ -401,7 +401,8 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	fileUUID, originalOwner := bytesToUUID(plaintext[:16]), string(plaintext[16:])
 
 	//Get symmetric keys from datastore
-	fileEncKey, fileHMACKey, err := userdata.GetKeys(originalOwner, fileUUID)
+	//TODO: Need to allow for case where original owner has overwritten keys before receive is called
+	fileEncKey, fileHMACKey, err := userdata.GetKeys(sender, fileUUID)
 	if err != nil {
 		return err
 	}
@@ -411,7 +412,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 	//Update User struct maps
 	userdata.UUIDMap[filename] = fileUUID
-	userdata.OriginalOwnerMap[filename] = userdata.Username
+	userdata.OriginalOwnerMap[filename] = originalOwner
 	userdata.SharedUsersMap[filename] = make([]string, 0)
 
 	//Store updated user struct on datastore
@@ -424,6 +425,89 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 // Removes target user's access.
 func (userdata *User) RevokeFile(filename string, target_username string) (err error) {
+
+	//Fetch updated user struct
+	storedUser, err := GetUser(userdata.Username, userdata.password)
+	if err != nil {
+		return err
+	}
+	*userdata = *storedUser
+
+	//Check if user is original owner
+	originalOwner, ok := userdata.OriginalOwnerMap[filename]
+	if !ok {
+		return errors.New("File not found")
+	}
+	if originalOwner != userdata.Username {
+		return errors.New("This user is not the original owner of the file")
+	}
+
+	//Load and decrypt file
+	data, err := userdata.LoadFile(filename)
+
+	//Remove target from shared users list
+	removedUser := false
+	userList := userdata.SharedUsersMap[filename]
+	for i, s := range userList {
+		if s == target_username {
+			userList[i] = userList[len(userList)-1] 
+			userList = userList[:len(userList)-1]
+			removedUser = true
+		}
+	}
+	if !removedUser {
+		return errors.New("Target user does not have access to file")
+	}
+
+	//Generate new keys
+	fileEncKey, fileHMACKey := userlib.RandomBytes(16), userlib.RandomBytes(16)
+
+	//Store new keys for self on datastore
+	if err = userdata.StoreKeys(userdata.Username, fileEncKey, fileHMACKey, userdata.UUIDMap[filename]); err != nil {
+		return err
+	}
+
+	//Iteratively store new keys for all children on datastore
+	fileUUID := userdata.UUIDMap[filename]
+	var queue []string
+	queue = userdata.SharedUsersMap[filename]
+	for len(queue) > 0 {
+		if err = userdata.StoreKeys(queue[0], fileEncKey, fileHMACKey, userdata.UUIDMap[filename]); err != nil {
+			return err
+		}
+		uuidHMAC, err := userlib.HMACEval(make([]byte, 16), append([]byte(queue[0] + "UserList"), fileUUID[:]...))
+		if err != nil {
+			return err
+		}
+		listUUID := bytesToUUID(uuidHMAC)
+		encryptedList, ok := userlib.DatastoreGet(listUUID)
+		if ok {
+			//return errors.New("User's shared users list corrupted")
+			marshalledStruct, err := userdata.VerifyThenDecrypt(encryptedList, queue[0])
+			if err != nil {
+				return err
+			}
+			var newUserList []string
+			if err = json.Unmarshal(marshalledStruct, &newUserList); err != nil {
+				return err
+			}
+			queue = append(queue, newUserList...)
+		}
+		queue = queue[1:]
+	}
+
+	//Encrypt file with new keys and store on datastore
+	ciphertext, err := EncryptThenMAC(data, fileEncKey, fileHMACKey)
+	if err != nil {
+		return
+	}
+	userlib.DatastoreSet(userdata.UUIDMap[filename], ciphertext)
+
+	//Store user struct on datastore
+	if err = StoreUserStruct(userdata); err != nil {
+		return err
+	}
+
 	return
 }
 
