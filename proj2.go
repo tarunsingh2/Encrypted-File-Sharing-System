@@ -366,6 +366,9 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	if err != nil {
 		return nil, errors.New("File corrupted")
 	}
+	if len(header) < 16 {
+		return nil, errors.New("File corrupted")
+	}
 
 	//Concatenate all pieces of file from header
 	var fileData []byte
