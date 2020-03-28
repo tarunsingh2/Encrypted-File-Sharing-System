@@ -37,7 +37,7 @@ import (
 	// see someUsefulThings() below:
 )
 
-// This serves two purposes: 
+// This serves two purposes:
 // a) It shows you some useful primitives, and
 // b) it suppresses warnings for items not being imported.
 // Of course, this function can be deleted.
@@ -111,11 +111,15 @@ type User struct {
 // keystore and the datastore functions in the userlib library.
 
 // You can assume the password has strong entropy, EXCEPT
-// the attackers may possess a precomputed tables containing 
+// the attackers may possess a precomputed tables containing
 // hashes of common passwords downloaded from the internet.
 func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
+
+	if len(password) == 0 || len(username) == 0 {
+		return nil, errors.New("Accounts must have a password and/or username!")
+	}
 
 	// Generate public keys
 	encKey, decKey, err := userlib.PKEKeyGen()
@@ -210,7 +214,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 
 // This stores a file in the datastore.
 //
-// The plaintext of the filename + the plaintext and length of the filename 
+// The plaintext of the filename + the plaintext and length of the filename
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
 
@@ -559,7 +563,7 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	userList := userdata.SharedUsersMap[filename]
 	for i, s := range userList {
 		if s == target_username {
-			userList[i] = userList[len(userList)-1] 
+			userList[i] = userList[len(userList)-1]
 			userList = userList[:len(userList)-1]
 			removedUser = true
 		}
@@ -808,14 +812,14 @@ func GenerateStructKeys(username string, password string) (encKey []byte, HMACKe
 	if err != nil {
 		return nil, nil, errors.New("HKDF failed!")
 	}
-	return structEncKey, structHMACKey, nil	
+	return structEncKey, structHMACKey, nil
 }
 
 
 // Returns whether two byte slices are equal
 func testEq(a, b []byte) bool {
-	if (a == nil) != (b == nil) { 
-        return false; 
+	if (a == nil) != (b == nil) {
+        return false;
     }
 
     if len(a) != len(b) {
