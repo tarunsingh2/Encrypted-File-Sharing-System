@@ -136,7 +136,7 @@ func TestUsers3(t *testing.T) {
 	}
 }
 
-// Datastore Corruption Tests
+// Datastore User Struct Corruption Tests
 func TestUsers4(t *testing.T) {
 	clear()
 	t.Log("Datastore Corruption Tests")
@@ -204,7 +204,7 @@ func TestUsers4(t *testing.T) {
 
 
 // [FILE STORAGE AND LOADING TESTS]
-
+// Simple store and load test
 func TestStorage1(t *testing.T) {
 	clear()
 	t.Log("Simple storing and loading test")
@@ -262,7 +262,62 @@ func TestStorage2(t *testing.T) {
 	}
 }
 
-// Test files corruption
+// Test for files that have filename of length zero
+func TestZeroLength(t *testing.T) {
+	clear()
+	t.Log("Files with no name test")
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	store_v1 := []byte("This file has no name")
+	u.StoreFile("", store_v1)
+
+	load_v1, err2 := u.LoadFile("")
+	if err2 != nil {
+		t.Error("Failed to upload and download", err2)
+		return
+	}
+
+	if !reflect.DeepEqual(store_v1, load_v1) {
+		t.Error("File with no name did not store/load correctly ->", err2)
+		return
+	}
+
+	store_v2 := []byte("This file also has no name")
+	u.StoreFile("", store_v2)
+
+	load_v2, err3 := u.LoadFile("")
+	if err3 != nil {
+		t.Error("Failed to upload and download", err2)
+		return
+	}
+
+	if reflect.DeepEqual(load_v1, load_v2) {
+		t.Error("Files with no name did not overwrite", load_v1, load_v2)
+		return
+	}
+}
+
+// Test for files that don't exist
+func TestInvalidFile(t *testing.T) {
+	clear()
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	_, err2 := u.LoadFile("this file does not exist")
+	if err2 == nil {
+		t.Error("Downloaded a ninexistent file", err2)
+		return
+	}
+}
+
+// Test file datastore corruption
 func TestFile(t *testing.T) {
 	clear()
 	t.Log("Test if load catches datastore corruption")
@@ -291,6 +346,7 @@ func TestFile(t *testing.T) {
 	}
 	t.Log("Successfully errored with corrupted file ->", err1)
 
+
 	// File deleted
 	store_v2 := []byte("Deleted")
 	u.StoreFile("file2", store_v2)
@@ -309,21 +365,42 @@ func TestFile(t *testing.T) {
 	t.Log("Successfully errored with deleted file ->", err2)
 }
 
-func TestInvalidFile(t *testing.T) {
+// Test the confidentiality of files
+func TestFileConfidentiality(t *testing.T) {
 	clear()
+	t.Log("Basic tests to see if information about files has leaked")
+
 	u, err := InitUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to initialize user", err)
 		return
 	}
+	store_f1 := []byte("This is a test")
+	u.StoreFile("file1", store_f1)
 
-	_, err2 := u.LoadFile("this file does not exist")
-	if err2 == nil {
-		t.Error("Downloaded a ninexistent file", err2)
-		return
+	data_store := userlib.DatastoreGetMap()
+	for key, file := range data_store {
+		if reflect.DeepEqual(key, "file1") || reflect.DeepEqual(store_f1, file) {
+			t.Error("Information about a file has leaked")
+		}
+		if len(key) == 5 {
+			t.Error("Information about a filename has leaked")
+		}
 	}
 }
 
+// Test file appending
+// func TestFileAppend(t *testing.T) {
+// 	clear()
+// 	t.Log("Test if file append works correctly")
+// 	u, err := InitUser("alice", "fubar")
+// 	if err != nil {
+// 		t.Error("Failed to initialize user", err)
+// 		return
+// 	}
+//
+//
+// }
 
 func TestShare(t *testing.T) {
 	clear()
