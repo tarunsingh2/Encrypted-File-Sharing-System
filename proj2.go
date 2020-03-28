@@ -566,6 +566,8 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 		return errors.New("Target user does not have access to file")
 	}
 
+	userdata.SharedUsersMap[filename] = userdata.SharedUsersMap[filename][:len(userList)]
+
 	//Generate new keys
 	fileEncKey, fileHMACKey := userlib.RandomBytes(16), userlib.RandomBytes(16)
 
