@@ -267,12 +267,21 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 			return
 		}
 
-		//Store encrypted file on datastore
-		ciphertext, err := EncryptThenMAC(data, fileEncKey, fileHMACKey)
+		//Store encrypted file header on datastore
+		fileDataUUID := bytesToUUID(userlib.RandomBytes(16))
+		ciphertext, err := EncryptThenMAC(fileDataUUID[:], fileEncKey, fileHMACKey)
 		if err != nil {
 			return
 		}
 		userlib.DatastoreSet(fileUUID, ciphertext)
+
+		//Store encrypted file data on datastore
+		ciphertext, err = EncryptThenMAC(data, fileEncKey, fileHMACKey)
+		if err != nil {
+			return
+		}
+		userlib.DatastoreSet(fileDataUUID, ciphertext)
+
 	}
 
 	return
