@@ -183,17 +183,28 @@ func TestUsers4(t *testing.T) {
 	for key, _ := range data_store {
     	data_store[key] = value_alice
 	}
-
 	_, corrupted_err := GetUser("bob", "fubar")
 	if deleted_err == nil {
 		t.Error("Should not get user ->", corrupted_err)
 		return
 	}
 	t.Log("Successfully returned error when bob's user struct was corrupted ->", corrupted_err)
+
+
+	for key, _ := range data_store {
+    	data_store[key] = nil
+	}
+	_, data_del_err := GetUser("bob", "fubar")
+	if data_del_err == nil {
+		t.Error("Should not get user ->", corrupted_err)
+		return
+	}
+	t.Log("Successfully returned error when bob's user struct was deleted but not the UUID ->", data_del_err)
 }
 
 
 // [FILE STORAGE AND LOADING TESTS]
+
 func TestStorage1(t *testing.T) {
 	clear()
 	t.Log("Simple storing and loading test")
@@ -251,23 +262,52 @@ func TestStorage2(t *testing.T) {
 	}
 }
 
-// // Test files corruption
-// func TestStorage3(t *testing.T) {
-// 	clear()
-// 	t.Log("Test if load catches datastore corruption")
-// 	u, err := InitUser("alice", "fubar")
-// 	if err != nil {
-// 		t.Error("Failed to initialize user", err)
-// 		return
-// 	}
-//
-// 	store_v1 := []byte("This is a test")
-// 	u.StoreFile("file1", store_v1)
-//
-// 	userlib.DatastoreGetMap()
-//
-//
-// }
+// Test files corruption
+func TestFile(t *testing.T) {
+	clear()
+	t.Log("Test if load catches datastore corruption")
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	store_v1 := []byte("This is a test")
+	u.StoreFile("file1", store_v1)
+
+	data_store := userlib.DatastoreGetMap()
+
+	// Corrupting files
+	for key, value := range data_store {
+		if len(value) < 50 {
+			data_store[key] = make([]byte, 14)
+		}
+	}
+
+	_, err1 := u.LoadFile("file1")
+	if err1 == nil {
+		t.Error("File corrupted and should not load", err1)
+		return
+	}
+	t.Log("Successfully errored with corrupted file ->", err1)
+
+	// File deleted
+	store_v2 := []byte("Deleted")
+	u.StoreFile("file2", store_v2)
+
+	for key, value := range data_store {
+		if len(value) < 50 {
+			userlib.DatastoreDelete(key)
+		}
+	}
+
+	_, err2 := u.LoadFile("file2")
+	if err2 == nil {
+		t.Error("File corrupted and should not load", err2)
+		return
+	}
+	t.Log("Successfully errored with deleted file ->", err2)
+}
 
 func TestInvalidFile(t *testing.T) {
 	clear()
