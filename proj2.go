@@ -263,6 +263,17 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 			return
 		}
 
+		//Make sure this user has not been revoked
+		encryptedHeader, ok := userlib.DatastoreGet(fileHeaderUUID)
+		if !ok {
+			return
+		}
+
+		_, err = MACThenDecrypt(encryptedHeader, fileEncKey, fileHMACKey)
+		if err != nil {
+			return
+		}
+
 		//Store encrypted file header on datastore
 		fileDataUUID := bytesToUUID(userlib.RandomBytes(16))
 		ciphertext, err := EncryptThenMAC(fileDataUUID[:], fileEncKey, fileHMACKey)
