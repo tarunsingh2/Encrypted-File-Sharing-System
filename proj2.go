@@ -507,11 +507,13 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	}
 	fileUUID, originalOwner := bytesToUUID(plaintext[:16]), string(plaintext[16:])
 
-	//Get symmetric keys from datastore
-	//TODO: Need to allow for case where original owner has overwritten keys before receive is called
+	//Get symmetric keys from datastore (could be signed by either sender or original owner)
 	fileEncKey, fileHMACKey, err := userdata.GetKeys(sender, fileUUID)
 	if err != nil {
-		return err
+		fileEncKey, fileHMACKey, err = userdata.GetKeys(originalOwner, fileUUID)
+		if err != nil {
+			return err
+		}
 	}
 
 	//Reupload symmetric keys encrypted for self
