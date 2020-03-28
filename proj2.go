@@ -222,11 +222,11 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	*userdata = *storedUser
 
 	//Check if filename already exists
-	fileUUID, ok := userdata.UUIDMap[filename]
+	fileHeaderUUID, ok := userdata.UUIDMap[filename]
 	if !ok {
-		//If no, generate random keys, random UUID
+		//If no, generate random keys, random UUIDs for header and data
 		fileEncKey, fileHMACKey := userlib.RandomBytes(16), userlib.RandomBytes(16)
-		fileUUID = bytesToUUID(userlib.RandomBytes(16))
+		fileDataUUID := bytesToUUID(userlib.RandomBytes(16))
 		fileHeaderUUID := bytesToUUID(userlib.RandomBytes(16))
 
 		//Store in map
@@ -242,10 +242,10 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		if err != nil {
 			return
 		}
-		userlib.DatastoreSet(fileUUID, ciphertext)
+		userlib.DatastoreSet(fileDataUUID, ciphertext)
 
 		//Store encrypted file header on datastore
-		ciphertext, err = EncryptThenMAC(fileUUID[:], fileEncKey, fileHMACKey)
+		ciphertext, err = EncryptThenMAC(fileDataUUID[:], fileEncKey, fileHMACKey)
 		if err != nil {
 			return
 		}
@@ -258,7 +258,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 	} else {
 		//Get keys from datastore
-		fileEncKey, fileHMACKey, err := userdata.GetKeys(userdata.OriginalOwnerMap[filename], fileUUID)
+		fileEncKey, fileHMACKey, err := userdata.GetKeys(userdata.OriginalOwnerMap[filename], fileHeaderUUID)
 		if err != nil {
 			return
 		}
@@ -269,7 +269,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		if err != nil {
 			return
 		}
-		userlib.DatastoreSet(fileUUID, ciphertext)
+		userlib.DatastoreSet(fileHeaderUUID, ciphertext)
 
 		//Store encrypted file data on datastore
 		ciphertext, err = EncryptThenMAC(data, fileEncKey, fileHMACKey)
