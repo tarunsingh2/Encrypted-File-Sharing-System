@@ -86,7 +86,7 @@ func TestUsers1(t *testing.T) {
 // Username duplication test. Should return an error on the second initialization
 func TestUsers2(t *testing.T) {
 	clear()
-	t.Log("Users Test 2 - Duplication Initialization")
+	t.Log("Duplicate Initialization")
 
 	// You can set this to false!
 	userlib.SetDebugStatus(true)
@@ -101,7 +101,7 @@ func TestUsers2(t *testing.T) {
 	u, err := InitUser("alice", "fubar")
 	// Should error as the username alice already exists
 	if err != nil {
-		t.Log("Should return an error when trying to create an account with an existing username-> ", err)
+		t.Log("Should return an error when trying to create an account with an existing username->", err)
 	} else {
 		t.Error("Created a new user when it wasn't supposed to", u)
 	}
@@ -110,7 +110,7 @@ func TestUsers2(t *testing.T) {
 // Trying to create an account with a very long username
 func TestUsers3(t *testing.T) {
 	clear()
-	t.Log("Users Test 3 - Long Username Initalization")
+	t.Log("Long Username Initalization")
 
 	// You can set this to false!
 	userlib.SetDebugStatus(true)
@@ -129,7 +129,7 @@ func TestUsers3(t *testing.T) {
 	}
 	_, long_err := InitUser(username, "fubar")
 	if err != nil {
-		t.Error("Failed to instantiate user with long username -> ", long_err)
+		t.Error("Failed to instantiate user with long username ->", long_err)
 	}
 
 	// Alice's user struct should be intact
@@ -139,6 +139,68 @@ func TestUsers3(t *testing.T) {
 	} else if u.Username != same_u.Username {
 		t.Error("Alice's user data should be untouched")
 	}
+}
+
+// Datastore Corruption Tests
+func TestUsers4(t *testing.T) {
+	clear()
+	t.Log("Datastore Corruption Tests")
+
+	// You can set this to false!
+	userlib.SetDebugStatus(true)
+
+
+	// Initiate user alice
+	_, err := InitUser("alice", "fubar")
+	// Should error as the username alice already exists
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	// Get alice's user struct for later use
+	u,_ := GetUser("alice", "fubar")
+
+
+	// Delete alice's user struct from the datastore
+	structUUIDHMAC, UUID_err := userlib.HMACEval(make([]byte, 16), []byte("alice" + "struct"))
+	if UUID_err != nil {
+		t.Error("UUID Error ->", UUID_err)
+	}
+	userlib.DatastoreDelete(bytesToUUID(structUUIDHMAC))
+
+
+	// Trying to access Alice's user struct should return an error
+	_, deleted_err := GetUser("alice", "fubar")
+	if deleted_err == nil {
+		t.Error("Should not get user ->", deleted_err)
+		return
+	}
+	t.Log("Successfully returned error when datastore UUID deleted ->", deleted_err)
+
+
+	// Initiate bob's user struct
+	bob, err2 := InitUser("bob", "fubar")
+	// Should error as the username alice already exists
+	if err2 != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err2)
+		return
+	}
+
+	// Corrupt bob's user struct
+	u.Username = "bob"
+	StoreUserStruct(u)
+	t.Log("Original Bob's Account: ", bob)
+	t.Log("Corrupted Data:", u)
+
+	// Trying to access bob's user struct should return an error
+	_, corrupted_err := GetUser("bob", "fubar")
+	if corrupted_err == nil {
+		t.Error("Should not get user since user sturct is corrupted")
+		return
+	}
+	t.Log("Successfully returned error when datastore got corrupted ->", corrupted_err)
 }
 
 
