@@ -7,10 +7,10 @@ import (
 	"testing"
 	"reflect"
 	"github.com/cs161-staff/userlib"
-	_ "encoding/json"
+	_"encoding/json"
 	_ "encoding/hex"
-	_ "github.com/google/uuid"
-	_ "strings"
+	_"github.com/google/uuid"
+	"strings"
 	_ "errors"
 	_ "strconv"
 )
@@ -69,7 +69,6 @@ func TestUsers1(t *testing.T) {
 	if user_err == nil {
 		// t.Error says the test fails
 		t.Error("Should not be able to create accounts with no username -> ", user_err)
-		return
 	}
 
 
@@ -79,7 +78,6 @@ func TestUsers1(t *testing.T) {
 	if pass_err == nil {
 		// t.Error says the test fails
 		t.Error("Should not be able to create accounts with no password -> ", pass_err)
-		return
 	}
 }
 
@@ -123,10 +121,7 @@ func TestUsers3(t *testing.T) {
 		return
 	}
 
-	username := "Barry"
-	for i := 0; i < 10000; i++ {
-		username = username + "barry"
-	}
+	username := strings.Repeat("barry", 100000)
 	_, long_err := InitUser(username, "fubar")
 	if err != nil {
 		t.Error("Failed to instantiate user with long username ->", long_err)
@@ -136,7 +131,7 @@ func TestUsers3(t *testing.T) {
 	same_u, err := GetUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to get user -> ", err)
-	} else if u.Username != same_u.Username {
+	} else if !reflect.DeepEqual(u, same_u) {
 		t.Error("Alice's user data should be untouched")
 	}
 }
@@ -152,22 +147,19 @@ func TestUsers4(t *testing.T) {
 
 	// Initiate user alice
 	_, err := InitUser("alice", "fubar")
-	// Should error as the username alice already exists
 	if err != nil {
-		// t.Error says the test fails
 		t.Error("Failed to initialize user", err)
 		return
 	}
-	// Get alice's user struct for later use
-	u,_ := GetUser("alice", "fubar")
 
 
 	// Delete alice's user struct from the datastore
-	structUUIDHMAC, UUID_err := userlib.HMACEval(make([]byte, 16), []byte("alice" + "struct"))
-	if UUID_err != nil {
-		t.Error("UUID Error ->", UUID_err)
+	data_store := userlib.DatastoreGetMap()
+	var value_alice []byte
+	for key, value := range data_store {
+		value_alice = value
+    	userlib.DatastoreDelete(key)
 	}
-	userlib.DatastoreDelete(bytesToUUID(structUUIDHMAC))
 
 
 	// Trying to access Alice's user struct should return an error
@@ -180,7 +172,7 @@ func TestUsers4(t *testing.T) {
 
 
 	// Initiate bob's user struct
-	bob, err2 := InitUser("bob", "fubar")
+	_, err2 := InitUser("bob", "fubar")
 	// Should error as the username alice already exists
 	if err2 != nil {
 		// t.Error says the test fails
@@ -188,24 +180,23 @@ func TestUsers4(t *testing.T) {
 		return
 	}
 
-	// Corrupt bob's user struct
-	u.Username = "bob"
-	StoreUserStruct(u)
-	t.Log("Original Bob's Account: ", bob)
-	t.Log("Corrupted Data:", u)
+	for key, _ := range data_store {
+    	data_store[key] = value_alice
+	}
 
-	// Trying to access bob's user struct should return an error
 	_, corrupted_err := GetUser("bob", "fubar")
-	if corrupted_err == nil {
-		t.Error("Should not get user since user sturct is corrupted")
+	if deleted_err == nil {
+		t.Error("Should not get user ->", corrupted_err)
 		return
 	}
-	t.Log("Successfully returned error when datastore got corrupted ->", corrupted_err)
+	t.Log("Successfully returned error when bob's user struct was corrupted ->", corrupted_err)
 }
 
 
-func TestStorage(t *testing.T) {
+// [FILE STORAGE AND LOADING TESTS]
+func TestStorage1(t *testing.T) {
 	clear()
+	t.Log("Simple storing and loading test")
 	u, err := InitUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to initialize user", err)
@@ -225,6 +216,58 @@ func TestStorage(t *testing.T) {
 		return
 	}
 }
+
+// Test if storing twice with the same name overwrites files
+func TestStorage2(t *testing.T) {
+	clear()
+	t.Log("Test if store twice overwrites files")
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	store_v1 := []byte("This is a test")
+	u.StoreFile("file1", store_v1)
+
+	load_v1, err2 := u.LoadFile("file1")
+	if err2 != nil {
+		t.Error("Failed to upload and download", err2)
+		return
+	}
+
+	store_v2 := []byte("This is not a test")
+	u.StoreFile("file1", store_v2)
+
+	load_v2, err3 := u.LoadFile("file1")
+	if err3 != nil {
+		t.Error("Failed to upload and download", err2)
+		return
+	}
+
+	if reflect.DeepEqual(load_v1, load_v2) {
+		t.Error("File with same name did not overwrite", load_v1, load_v2)
+		return
+	}
+}
+
+// // Test files corruption
+// func TestStorage3(t *testing.T) {
+// 	clear()
+// 	t.Log("Test if load catches datastore corruption")
+// 	u, err := InitUser("alice", "fubar")
+// 	if err != nil {
+// 		t.Error("Failed to initialize user", err)
+// 		return
+// 	}
+//
+// 	store_v1 := []byte("This is a test")
+// 	u.StoreFile("file1", store_v1)
+//
+// 	userlib.DatastoreGetMap()
+//
+//
+// }
 
 func TestInvalidFile(t *testing.T) {
 	clear()
