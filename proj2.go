@@ -245,7 +245,9 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		userdata.SharedUsersMap[filename] = make([]string, 0)
 
 		//Store keys on datastore
-		userdata.StoreKeys(userdata.Username, fileEncKey, fileHMACKey, fileHeaderUUID)
+		if err = userdata.StoreKeys(userdata.Username, fileEncKey, fileHMACKey, fileHeaderUUID); err != nil {
+			return
+		}
 
 		//Store encrypted file on datastore
 		ciphertext, err := EncryptThenMAC(data, fileEncKey, fileHMACKey)
@@ -553,7 +555,9 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	}
 
 	//Reupload symmetric keys encrypted for self
-	userdata.StoreKeys(userdata.Username, fileEncKey, fileHMACKey, fileUUID)
+	if err = userdata.StoreKeys(userdata.Username, fileEncKey, fileHMACKey, fileUUID); err != nil {
+		return err
+	}
 
 	//Update User struct maps
 	userdata.UUIDMap[filename] = fileUUID
@@ -732,6 +736,9 @@ func StoreSharedUsersList(userdata *User, originalOwner string, filename string)
 
 	//Marshall, encrypt and sign for original owner
 	marshalledList, err := json.Marshal(userdata.SharedUsersMap[filename])
+	if err != nil {
+		return err
+	}
 	encryptedList, err := userdata.EncryptThenSign(marshalledList, originalOwner)
 	if err != nil {
 		return err
@@ -845,15 +852,17 @@ func MACThenDecrypt(ciphertext []byte, encKey []byte, HMACKey []byte) (plaintext
 func GenerateStructKeys(username string, password string) (encKey []byte, HMACKey []byte, err error) {
 	masterKey := userlib.Argon2Key([]byte(password), []byte(username + "MasterKey"), 16)
 	structEncKey, err := userlib.HashKDF(masterKey, []byte("encryption"))
+	if err != nil {
+		return nil, nil, errors.New("HKDF failed!")
+	}
 	structEncKey = structEncKey[:16]
-	if err != nil {
-		return nil, nil, errors.New("HKDF failed!")
-	}
+	
 	structHMACKey, err := userlib.HashKDF(masterKey, []byte("HMAC"))
-	structHMACKey = structHMACKey[:16]
 	if err != nil {
 		return nil, nil, errors.New("HKDF failed!")
 	}
+	structHMACKey = structHMACKey[:16]
+	
 	return structEncKey, structHMACKey, nil
 }
 
