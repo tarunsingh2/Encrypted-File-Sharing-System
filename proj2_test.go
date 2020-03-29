@@ -555,3 +555,518 @@ func TestShare2(t *testing.T) {
 		return
 	}
 }
+
+func TestShare(t *testing.T) {
+	clear()
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	u2, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	v := []byte("This is a test")
+	u.StoreFile("file1", v)
+
+	var v2 []byte
+	var magic_string string
+
+	v, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+		return
+	}
+
+	magic_string, err = u.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+		return
+	}
+	err = u2.ReceiveFile("file2", "alice", magic_string)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+
+	v2, err = u2.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+		return
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
+	vNew := []byte("This is an updated test")
+	u.StoreFile("file1", vNew)
+
+	v, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+		return
+	}
+	if !reflect.DeepEqual(v, vNew) {
+		t.Error("Shared file is not the same", v, vNew)
+		return
+	}
+
+	v, err = u2.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to download the file from bob", err)
+		return
+	}
+	if !reflect.DeepEqual(v, vNew) {
+		t.Error("Shared file is not the same", v, vNew)
+		return
+	}
+
+	vNew = []byte("This is an updated test three")
+	u2.StoreFile("file2", vNew)
+
+	v, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+		return
+	}
+	if !reflect.DeepEqual(v, vNew) {
+		t.Error("Shared file is not the same", v, vNew)
+		return
+	}
+
+	v, err = u2.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to download the file from bob", err)
+		return
+	}
+	if !reflect.DeepEqual(v, vNew) {
+		t.Error("Shared file is not the same", v, vNew)
+		return
+	}
+
+}
+
+func TestRevoke(t *testing.T) {
+	clear()
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	u2, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	v := []byte("This is a test")
+	u.StoreFile("file1", v)
+	
+	var v2 []byte
+	var magic_string string
+
+	v, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+		return
+	}
+
+	magic_string, err = u.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+		return
+	}
+
+	v2, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file after revoking alice", err)
+		return
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
+	err = u2.ReceiveFile("file2", "alice", magic_string)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+
+	v2, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file after revoking alice", err)
+		return
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
+	v2, err = u2.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+		return
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
+	// aliceEnc, aliceHMAC, err := u.GetKeys("alice", u.UUIDMap["file1"])
+	// t.Log(aliceEnc)
+	// t.Log(aliceHMAC)
+
+	// bobEnc, bobHMAC, err := u2.GetKeys("alice", u2.UUIDMap["file2"])
+	// t.Log(bobEnc)
+	// t.Log(bobHMAC)
+
+	if err = u.RevokeFile("file1", "bob"); err != nil {
+		t.Error("Failed to revoke file", err)
+	}
+
+	// aliceEnc, aliceHMAC, err = u.GetKeys("alice", u.UUIDMap["file1"])
+	// t.Log(aliceEnc)
+	// t.Log(aliceHMAC)
+
+	// bobEnc, bobHMAC, err = u2.GetKeys("alice", u2.UUIDMap["file2"])
+	// t.Log(bobEnc)
+	// t.Log(bobHMAC)
+
+	v2, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file after revoking alice", err)
+		return
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
+	u.StoreFile("file1", []byte("This has been updated after Bob was revoked"))
+
+	_, err = u2.LoadFile("file2")
+	if err != nil {
+		t.Log("Failed to download the file after revoking bob", err)
+	} else {
+		t.Error("Bob was able to load file after being revoked")
+		return
+	}
+}
+
+func TestAppend(t *testing.T) {
+	clear()
+
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	v := []byte("This is a test")
+	u.StoreFile("file1", v)
+
+	v2, err2 := u.LoadFile("file1")
+	if err2 != nil {
+		t.Error("Failed to upload and download", err2)
+		return
+	}
+
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Downloaded file is not the same", v, v2)
+		return
+	}
+
+	if err = u.AppendFile("file1", []byte(" of the append function")); err != nil {
+		t.Error("Failed to append to file", err)
+	}
+
+	v3, err := u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to load file after appending", err)
+		return
+	}
+
+	if !reflect.DeepEqual(v3, append(v, []byte(" of the append function")...)) {
+		t.Error("Downloaded file is not the same after appending", v3)
+		return
+	}
+
+	userlib.DebugMsg(string(v3))
+
+}
+
+func TestShareManyUsers(t *testing.T) {
+	clear()
+
+	alice, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	bob, err := InitUser("bob", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	data := []byte("This is a test")
+	alice.StoreFile("file1", data)
+
+	magic_string, err := alice.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share file", err)
+		return
+	}
+
+	if err = bob.ReceiveFile("file2", "alice", magic_string); err != nil {
+		t.Error("Failed to receive file", err)
+		return
+	}
+
+	for i := 0; i < 100; i++ {
+		user, err := InitUser(string(i), "fubar")
+		if err != nil {
+			t.Error("Failed to initialize user", err)
+			return
+		}
+		magic_string, err = bob.ShareFile("file2", string(i))
+		if err != nil {
+			t.Error("Failed to share file", err)
+			return
+		}
+		if err = user.ReceiveFile("file1", "bob", magic_string); err != nil {
+			t.Error("Failed to receive file", err)
+			return
+		}
+	}
+
+}
+
+func TestShareRevokeSequence(t *testing.T) {
+	clear()
+
+	//Initialize all users
+	alice, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	bob, err := InitUser("bob", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	charlie, err := InitUser("charlie", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	darren, err := InitUser("darren", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	//Alice stores the file
+	data := []byte("This is a test")
+	alice.StoreFile("file1", data)
+
+	//Alice shares the file with bob and charlie
+	magic_string_bob, err := alice.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the file with bob", err)
+		return
+	}
+	magic_string_charlie, err := alice.ShareFile("file1", "charlie")
+	if err != nil {
+		t.Error("Failed to share the file with charlie", err)
+		return
+	}
+
+	//Bob receives the file
+	err = bob.ReceiveFile("file2", "alice", magic_string_bob)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+
+	//Bob loads the file
+	file_bob, err := bob.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to load file by Bob", err)
+		return
+	}
+	if !reflect.DeepEqual(data, file_bob) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+
+	//Bob updates the file
+	data = []byte("This is a test updated by Bob")
+	bob.StoreFile("file2", data)
+
+	//Charlie receives the file
+	err = charlie.ReceiveFile("file3", "alice", magic_string_charlie)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+
+	//Charlie loads the file
+	file_charlie, err := charlie.LoadFile("file3")
+	if err != nil {
+		t.Error("Failed to load file by Charlie", err)
+		return
+	}
+	if !reflect.DeepEqual(data, file_charlie) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_charlie))
+
+	//Charlie shares the file with Darren
+	magic_string_darren, err := charlie.ShareFile("file3", "darren")
+	if err != nil {
+		t.Error("Failed to share the file with darren", err)
+		return
+	}
+
+	//Charlie appends to the file
+	if err = charlie.AppendFile("file3", []byte(" and appended to by Charlie")); err != nil {
+		t.Error("Charlie failed to append to file", err)
+		return
+	}
+
+	data = []byte("This is a test updated by Bob and appended to by Charlie")
+
+	//Alice and Bob load latest version of file
+	file_alice, err := alice.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to load file by Alice", err)
+		return
+	}
+	if !reflect.DeepEqual(data, file_alice) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_alice))
+
+	file_bob, err = bob.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to load file by Bob", err)
+		return
+	}
+	if !reflect.DeepEqual(data, file_bob) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_bob))
+
+	// //Darren receives the file
+	// err = darren.ReceiveFile("file4", "charlie", magic_string_darren)
+	// if err != nil {
+	// 	t.Error("Failed to receive the share message", err)
+	// 	return
+	// }
+
+	// aliceEnc, aliceHMAC, err := alice.GetKeys("alice", alice.UUIDMap["file1"])
+	// t.Log(aliceEnc)
+	// t.Log(aliceHMAC)
+
+	// bobEnc, bobHMAC, err := bob.GetKeys("alice", bob.UUIDMap["file2"])
+	// t.Log(bobEnc)
+	// t.Log(bobHMAC)
+
+	//Alice revokes Bob's access to the file
+	if err = alice.RevokeFile("file1", "bob"); err != nil {
+		t.Error("Failed to revoke Bob's access by Alice", err)
+		return
+	}
+
+	// aliceEnc, aliceHMAC, err = alice.GetKeys("alice", alice.UUIDMap["file1"])
+	// t.Log(aliceEnc)
+	// t.Log(aliceHMAC)
+
+	// bobEnc, bobHMAC, err = bob.GetKeys("alice", bob.UUIDMap["file2"])
+	// t.Log(bobEnc)
+	// t.Log(bobHMAC)
+
+	//Darren receives the file
+	err = darren.ReceiveFile("file4", "charlie", magic_string_darren)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+
+	//Alice, Charlie, and Darren access the file
+	file_alice, err = alice.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to load file by Alice", err)
+		return
+	}
+	if !reflect.DeepEqual(data, file_alice) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_alice))
+
+	file_charlie, err = charlie.LoadFile("file3")
+	if err != nil {
+		t.Error("Failed to load file by Charlie", err)
+		return
+	}
+	if !reflect.DeepEqual(data, file_charlie) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_charlie))
+
+	file_darren, err := darren.LoadFile("file4")
+	if err != nil {
+		t.Error("Failed to load file by Darren", err)
+		return
+	}
+	if !reflect.DeepEqual(data, file_darren) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_darren))
+
+	//Bob tries to access the file (should fail)
+	file_bob, err = bob.LoadFile("file2")
+	if err == nil {
+		t.Error("Bob was able to load file", err)
+		return
+	} else {
+		t.Log("Bob was not able to load file: ", err)
+	}
+
+	//Bob tries to overwrite the file
+	bad_data := []byte("This file was overwritten after Bob was revoked")
+	bob.StoreFile("file2", bad_data)
+
+
+	if err = bob.AppendFile("file2", []byte(" overwriting after revocation")); err == nil {
+		t.Error("Successfully appended to file", err)
+	} else {
+		t.Log("Failed to append to file: ", err)
+	}
+
+	//Alice loads the file again (should not be overwritten)
+	file_alice, err = alice.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to load file by Alice", err)
+		return
+	}
+	if !reflect.DeepEqual(data, file_alice) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_alice))	
+
+}
