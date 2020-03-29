@@ -1516,7 +1516,7 @@ func TestFilenameLengthLeak(t *testing.T) {
 	longLen := sum
 
 	t.Logf("Short len: %d, Long len: %d", shortLen, longLen)
-	if shortLen != longLen {
+	if longLen - shortLen > 10 || longLen - shortLen < -10 {
 		t.Error("Filename length has been leaked to datastore!")
 		return
 	}

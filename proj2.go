@@ -217,6 +217,12 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // The plaintext of the filename + the plaintext and length of the filename
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
+	//Hash filename
+	filenameHash, err := userlib.HMACEval(make([]byte, 16), []byte(filename))
+	if err != nil {
+		return
+	}
+	filename = hex.EncodeToString(filenameHash[:16])
 
 	//Fetch stored user struct and update local copy
 	storedUser, err := GetUser(userdata.Username, userdata.password)
@@ -304,6 +310,12 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 // existing file, but only whatever additional information and
 // metadata you need.
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	//Hash filename
+	filenameHash, err := userlib.HMACEval(make([]byte, 16), []byte(filename))
+	if err != nil {
+		return err
+	}
+	filename = hex.EncodeToString(filenameHash[:16])
 
 	//Fetch updated user struct and update local copy
 	storedUser, err := GetUser(userdata.Username, userdata.password)
@@ -360,6 +372,12 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //
 // It should give an error if the file is corrupted in any way.
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
+	//Hash filename
+	filenameHash, err := userlib.HMACEval(make([]byte, 16), []byte(filename))
+	if err != nil {
+		return nil, err
+	}
+	filename = hex.EncodeToString(filenameHash[:16])
 
 	//Fetch stored User struct and update local copy
 	storedUser, err := GetUser(userdata.Username, userdata.password)
@@ -425,6 +443,13 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // should be able to know the sender.
 func (userdata *User) ShareFile(filename string, recipient string) (
 	magic_string string, err error) {
+	//Hash filename
+	filenameHash, err := userlib.HMACEval(make([]byte, 16), []byte(filename))
+	if err != nil {
+		return "", err
+	}
+	filename = hex.EncodeToString(filenameHash[:16])
+
 	//Fetch stored User struct and update local copy
 	storedUser, err := GetUser(userdata.Username, userdata.password)
 	if err != nil {
@@ -491,6 +516,13 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string,
 	magic_string string) error {
+	//Hash filename
+	filenameHash, err := userlib.HMACEval(make([]byte, 16), []byte(filename))
+	if err != nil {
+		return err
+	}
+	filename = hex.EncodeToString(filenameHash[:16])
+
 	//Fetch stored User struct and update local copy
 	storedUser, err := GetUser(userdata.Username, userdata.password)
 	if err != nil {
@@ -538,6 +570,13 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 // Removes target user's access.
 func (userdata *User) RevokeFile(filename string, target_username string) (err error) {
+	//Hash filename
+	originalFilename := filename
+	filenameHash, err := userlib.HMACEval(make([]byte, 16), []byte(filename))
+	if err != nil {
+		return err
+	}
+	filename = hex.EncodeToString(filenameHash[:16])
 
 	//Fetch updated user struct
 	storedUser, err := GetUser(userdata.Username, userdata.password)
@@ -556,7 +595,10 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	}
 
 	//Load and decrypt file
-	data, err := userdata.LoadFile(filename)
+	data, err := userdata.LoadFile(originalFilename)
+	if err != nil {
+		return err
+	}
 
 	//Remove target from shared users list
 	removedUser := false
