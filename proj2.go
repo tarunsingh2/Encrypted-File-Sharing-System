@@ -226,11 +226,11 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	*userdata = *storedUser
 
 	//Check if filename already exists
-	fileUUID, ok := userdata.UUIDMap[filename]
+	fileHeaderUUID, ok := userdata.UUIDMap[filename]
 	if !ok {
-		//If no, generate random keys, random UUID
+		//If no, generate random keys, random UUIDs for header and data
 		fileEncKey, fileHMACKey := userlib.RandomBytes(16), userlib.RandomBytes(16)
-		fileUUID = bytesToUUID(userlib.RandomBytes(16))
+		fileDataUUID := bytesToUUID(userlib.RandomBytes(16))
 		fileHeaderUUID := bytesToUUID(userlib.RandomBytes(16))
 
 		//Store in map
@@ -246,10 +246,10 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		if err != nil {
 			return
 		}
-		userlib.DatastoreSet(fileUUID, ciphertext)
+		userlib.DatastoreSet(fileDataUUID, ciphertext)
 
 		//Store encrypted file header on datastore
-		ciphertext, err = EncryptThenMAC(fileUUID[:], fileEncKey, fileHMACKey)
+		ciphertext, err = EncryptThenMAC(fileDataUUID[:], fileEncKey, fileHMACKey)
 		if err != nil {
 			return
 		}
@@ -262,7 +262,18 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 	} else {
 		//Get keys from datastore
-		fileEncKey, fileHMACKey, err := userdata.GetKeys(userdata.OriginalOwnerMap[filename], fileUUID)
+		fileEncKey, fileHMACKey, err := userdata.GetKeys(userdata.OriginalOwnerMap[filename], fileHeaderUUID)
+		if err != nil {
+			return
+		}
+
+		//Make sure this user has not been revoked
+		encryptedHeader, ok := userlib.DatastoreGet(fileHeaderUUID)
+		if !ok {
+			return
+		}
+
+		_, err = MACThenDecrypt(encryptedHeader, fileEncKey, fileHMACKey)
 		if err != nil {
 			return
 		}
@@ -273,7 +284,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		if err != nil {
 			return
 		}
-		userlib.DatastoreSet(fileUUID, ciphertext)
+		userlib.DatastoreSet(fileHeaderUUID, ciphertext)
 
 		//Store encrypted file data on datastore
 		ciphertext, err = EncryptThenMAC(data, fileEncKey, fileHMACKey)
@@ -435,6 +446,17 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 		return "", err
 	}
 
+	//Make sure this user has not been revoked
+	// encryptedHeader, ok := userlib.DatastoreGet(fileUUID)
+	// if !ok {
+	// 	return
+	// }
+
+	// _, err = MACThenDecrypt(encryptedHeader, fileEncKey, fileHMACKey)
+	// if err != nil {
+	// 	return
+	// }
+
 	//Encrypt symmetric file keys with recipient's public key and store on datastore
 	if err = userdata.StoreKeys(recipient, fileEncKey, fileHMACKey, fileUUID); err != nil {
 		return "", err
@@ -489,11 +511,13 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	}
 	fileUUID, originalOwner := bytesToUUID(plaintext[:16]), string(plaintext[16:])
 
-	//Get symmetric keys from datastore
-	//TODO: Need to allow for case where original owner has overwritten keys before receive is called
+	//Get symmetric keys from datastore (could be signed by either sender or original owner)
 	fileEncKey, fileHMACKey, err := userdata.GetKeys(sender, fileUUID)
 	if err != nil {
-		return err
+		fileEncKey, fileHMACKey, err = userdata.GetKeys(originalOwner, fileUUID)
+		if err != nil {
+			return err
+		}
 	}
 
 	//Reupload symmetric keys encrypted for self
@@ -547,6 +571,8 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	if !removedUser {
 		return errors.New("Target user does not have access to file")
 	}
+
+	userdata.SharedUsersMap[filename] = userdata.SharedUsersMap[filename][:len(userList)]
 
 	//Generate new keys
 	fileEncKey, fileHMACKey := userlib.RandomBytes(16), userlib.RandomBytes(16)
