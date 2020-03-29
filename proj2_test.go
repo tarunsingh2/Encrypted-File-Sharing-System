@@ -555,3 +555,76 @@ func TestShare2(t *testing.T) {
 		return
 	}
 }
+
+// Corrupted load testing
+func TestShare3(t *testing.T) {
+	var magic_string string
+	clear()
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	u2, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	v := []byte("This is a test")
+	u.StoreFile("file1", v)
+
+	_, err3 := u.ShareFile("file1", "bob")
+	if err3 != nil {
+		t.Error("Could not share ->", err3)
+		return
+	}
+
+	data_store := userlib.DatastoreGetMap()
+	for key, value := range data_store {
+		if len(value) < 200 {
+			data_store[key] = userlib.RandomBytes(16)
+		}
+	}
+
+	err4 := u2.ReceiveFile("file1", "alice", magic_string)
+	if err4 == nil {
+		t.Error("Should not be able to receive corrupted file")
+		return
+	}
+}
+
+func TestShare4(t *testing.T) {
+	var magic_string string
+	data_store := userlib.DatastoreGetMap()
+	clear()
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	u2, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	v2 := []byte("This is a test")
+	u.StoreFile("file2", v2)
+	_, err5 := u.ShareFile("file2", "bob")
+	if err5 != nil {
+		t.Error("Could not share file")
+		return
+	}
+	for key, value := range data_store {
+		if len(value) < 150 {
+			userlib.DatastoreDelete(key)
+		}
+	}
+
+	err6 := u2.ReceiveFile("file2", "alice", magic_string)
+	if err6 == nil {
+		t.Error("Should not be able to receive deleted file")
+		return
+	}
+}
