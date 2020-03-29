@@ -262,6 +262,32 @@ func TestStorage2(t *testing.T) {
 	}
 }
 
+// Tests if bob can access alice's files
+func TestAccess(t *testing.T) {
+	clear()
+	t.Log("File access tests")
+	alice, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	bob, err := InitUser("bob", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	v := []byte("This is a test")
+	alice.StoreFile("file1", v)
+
+	_, err2 := bob.LoadFile("file1")
+	if err2 == nil {
+		t.Error("Bob should not be able to access alice's files", err2)
+		return
+	}
+}
+
 // Test for files that have filename of length zero
 func TestZeroLength(t *testing.T) {
 	clear()
@@ -334,7 +360,7 @@ func TestFile(t *testing.T) {
 
 	// Corrupting files
 	for key, value := range data_store {
-		if len(value) < 50 {
+		if len(value) < 200 {
 			data_store[key] = make([]byte, 14)
 		}
 	}
@@ -352,7 +378,7 @@ func TestFile(t *testing.T) {
 	u.StoreFile("file2", store_v2)
 
 	for key, value := range data_store {
-		if len(value) < 50 {
+		if len(value) < 200 {
 			userlib.DatastoreDelete(key)
 		}
 	}
@@ -390,19 +416,56 @@ func TestFileConfidentiality(t *testing.T) {
 }
 
 // Test file appending
-// func TestFileAppend(t *testing.T) {
-// 	clear()
-// 	t.Log("Test if file append works correctly")
-// 	u, err := InitUser("alice", "fubar")
-// 	if err != nil {
-// 		t.Error("Failed to initialize user", err)
-// 		return
-// 	}
-//
-//
-// }
+func TestFileAppend(t *testing.T) {
+	clear()
+	data_store := userlib.DatastoreGetMap()
+	t.Log("Test if file append works correctly")
 
-func TestShare(t *testing.T) {
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	store_f1 := []byte("This is a test ")
+	u.StoreFile("file1", store_f1)
+	store_f2 := []byte("or is it?")
+	u.AppendFile("file1", store_f2)
+
+	load_file, err1 := u.LoadFile("file1")
+	if err1 != nil {
+		t.Error("File could not load ->", err1)
+		return
+	}
+	if !reflect.DeepEqual(load_file, []byte("This is a test or is it?")) {
+		t.Error("File did not append correctly")
+	}
+
+	// Corrupting the file to append to
+	for key, value := range data_store {
+		if len(value) < 200 {
+			data_store[key] = userlib.RandomBytes(16)
+		}
+	}
+	store_f3 := []byte("File is corrupted")
+	append_error1 := u.AppendFile("file1", store_f3)
+	if append_error1 != nil {
+		t.Log("Correctly did not append to corrupted file ->", append_error1)
+	}
+
+	// Deleting the file to append to
+	for key, value := range data_store {
+		if len(value) < 200 {
+			userlib.DatastoreDelete(key)
+		}
+	}
+	store_f4 := []byte("Should not append")
+	append_error2 := u.AppendFile("file1", store_f4)
+	if append_error2 != nil {
+		t.Log("Correctly could not append to deleted file ->", append_error2)
+	}
+}
+
+func TestShare1(t *testing.T) {
 	clear()
 	u, err := InitUser("alice", "fubar")
 	if err != nil {
@@ -448,4 +511,47 @@ func TestShare(t *testing.T) {
 		return
 	}
 
+}
+
+func TestShare2(t *testing.T) {
+	clear()
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	_, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	v := []byte("This is a test")
+	u.StoreFile("file1", v)
+
+	data_store := userlib.DatastoreGetMap()
+	for key, value := range data_store {
+		if len(value) < 200 {
+			data_store[key] = userlib.RandomBytes(16)
+		}
+	}
+
+	_, err3 := u.ShareFile("file1", "bob")
+	if err3 == nil {
+		t.Error("Corrupted file should not be shared ->", err3)
+		return
+	}
+
+	v2 := []byte("This is a test")
+	u.StoreFile("file2", v2)
+	for key, value := range data_store {
+		if len(value) < 150 {
+			userlib.DatastoreDelete(key)
+		}
+	}
+	_, err4 := u.ShareFile("file2", "bob")
+	if err4 == nil {
+		t.Error("Deleted file should not be shared")
+		return
+	}
 }
