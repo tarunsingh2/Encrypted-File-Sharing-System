@@ -447,15 +447,15 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	}
 
 	//Make sure this user has not been revoked
-	// encryptedHeader, ok := userlib.DatastoreGet(fileUUID)
-	// if !ok {
-	// 	return
-	// }
+	encryptedHeader, ok := userlib.DatastoreGet(fileUUID)
+	if !ok {
+		return
+	}
 
-	// _, err = MACThenDecrypt(encryptedHeader, fileEncKey, fileHMACKey)
-	// if err != nil {
-	// 	return
-	// }
+	_, err = MACThenDecrypt(encryptedHeader, fileEncKey, fileHMACKey)
+	if err != nil {
+		return
+	}
 
 	//Encrypt symmetric file keys with recipient's public key and store on datastore
 	if err = userdata.StoreKeys(recipient, fileEncKey, fileHMACKey, fileUUID); err != nil {
