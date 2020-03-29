@@ -1189,7 +1189,7 @@ func TestShareRevokeSequence(t *testing.T) {
 		t.Log("Correctly errored when trying to share file after being revoked: ", err)
 	}
 	_ = eddie
-	
+
 	//Alice loads the file again (should not be overwritten)
 	file_alice, err = alice.LoadFile("file1")
 	if err != nil {
@@ -1201,6 +1201,167 @@ func TestShareRevokeSequence(t *testing.T) {
 		return
 	}
 	t.Log(string(file_alice))
+
+	//Alice revokes Charlie
+	if err = alice.RevokeFile("file1", "charlie"); err != nil {
+		t.Error("Failed to revoke Charlies's access by Alice", err)
+		return
+	}
+
+	//Charlie tries to access the file (should fail)
+	file_charlie, err = charlie.LoadFile("file3")
+	if err == nil {
+		t.Error("Charlie was able to load file", err)
+		return
+	} else {
+		t.Log("Charlie was not able to load file: ", err)
+	}
+
+	//Charlie tries to overwrite the file (should fail)
+	bad_data = []byte("This file was overwritten after Charlie was revoked")
+	charlie.StoreFile("file3", bad_data)
+
+	//Charie tries to append to file (should fail)
+	if err = charlie.AppendFile("file3", []byte(" overwriting after revocation")); err == nil {
+		t.Error("Successfully appended to file", err)
+	} else {
+		t.Log("Failed to append to file: ", err)
+	}
+
+	//Charlie tries to share file (should fail)
+	_, err = charlie.ShareFile("file3", "eddie")
+	if err == nil {
+		t.Error("Successfully shared file with eddie")
+		return
+	} else {
+		t.Log("Correctly errored when trying to share file after being revoked: ", err)
+	}	
+
+	//Darren tries to access the file (should fail)
+	file_darren, err = darren.LoadFile("file4")
+	if err == nil {
+		t.Error("Darren was able to load file", err)
+		return
+	} else {
+		t.Log("Darren was not able to load file: ", err)
+	}
+
+	//Darren tries to overwrite the file (should fail)
+	bad_data = []byte("This file was overwritten after Darren was revoked")
+	darren.StoreFile("file4", bad_data)
+
+	//Darren tries to append to file (should fail)
+	if err = darren.AppendFile("file4", []byte(" overwriting after revocation")); err == nil {
+		t.Error("Successfully appended to file", err)
+	} else {
+		t.Log("Failed to append to file: ", err)
+	}
+
+	//Darren tries to share file (should fail)
+	_, err = darren.ShareFile("file4", "eddie")
+	if err == nil {
+		t.Error("Successfully shared file with eddie")
+		return
+	} else {
+		t.Log("Correctly errored when trying to share file after being revoked: ", err)
+	}
+
+	//Alice loads the file again (should not be overwritten)
+	file_alice, err = alice.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to load file by Alice", err)
+		return
+	}
+	if !reflect.DeepEqual(data, file_alice) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_alice))
+
+	//Alice shares the file with Charlie again
+	magic_string, err := alice.ShareFile("file1", "charlie")
+	if err != nil {
+		t.Error("Failed to share file again with charlie: ", err)
+		return
+	} 
+	if err = charlie.ReceiveFile("file3New", "alice", magic_string); err != nil {
+		t.Error("Failed to receive file after being revoked: ", err)
+		return
+	}
+
+	//Charlie should again have access to the file
+	file_charlie, err = charlie.LoadFile("file3New")
+	if err != nil {
+		t.Error("Failed to load file by Charlie", err)
+		return
+	}
+	if !reflect.DeepEqual(data, file_charlie) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_charlie))
+
+	//Darren should not have access
+
+	//Darren tries to access the file (should fail)
+	file_darren, err = darren.LoadFile("file4")
+	if err == nil {
+		t.Error("Darren was able to load file", err)
+		return
+	} else {
+		t.Log("Darren was not able to load file: ", err)
+	}
+
+	//Darren tries to overwrite the file (should fail)
+	bad_data = []byte("This file was overwritten after Darren was revoked")
+	darren.StoreFile("file4", bad_data)
+
+	//Darren tries to append to file (should fail)
+	if err = darren.AppendFile("file4", []byte(" overwriting after revocation")); err == nil {
+		t.Error("Successfully appended to file", err)
+	} else {
+		t.Log("Failed to append to file: ", err)
+	}
+
+	//Darren tries to share file (should fail)
+	_, err = darren.ShareFile("file4", "eddie")
+	if err == nil {
+		t.Error("Successfully shared file with eddie")
+		return
+	} else {
+		t.Log("Correctly errored when trying to share file after being revoked: ", err)
+	}
+
+	//Alice should be able to see Charlie's changes
+	new_data := []byte("This file is from after Charlie was given access to the file again")
+	charlie.StoreFile("file3New", new_data)
+
+	file_alice, err = alice.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to load file by Alice", err)
+		return
+	}
+	if !reflect.DeepEqual(new_data, file_alice) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_alice))
+
+	//Charlie should be able to see Alice's changes
+	if err = alice.AppendFile("file1", []byte(" and appended to by Alice")); err != nil {
+		t.Error("Failed to append to file: ", err)
+		return
+	}
+	file_charlie, err = charlie.LoadFile("file3New")
+	if err != nil {
+		t.Error("Failed to load file by Charlie", err)
+		return
+	}
+	if !reflect.DeepEqual(append(new_data, []byte(" and appended to by Alice")...), file_charlie) {
+		t.Error("Downloaded file is not the same as the original")
+		return
+	}
+	t.Log(string(file_charlie))
 
 }
 
@@ -1360,3 +1521,4 @@ func TestFilenameLengthLeak(t *testing.T) {
 		return
 	}
 }
+
