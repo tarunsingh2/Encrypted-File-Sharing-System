@@ -990,6 +990,10 @@ func TestShareRevokeSequence(t *testing.T) {
 		t.Error("Failed to initialize user", err)
 		return
 	}
+	eddie, err := InitUser("eddie", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+	}
 
 	//Alice stores the file
 	data := []byte("This is a test")
@@ -1165,17 +1169,27 @@ func TestShareRevokeSequence(t *testing.T) {
 		t.Log("Bob was not able to load file: ", err)
 	}
 
-	//Bob tries to overwrite the file
+	//Bob tries to overwrite the file (should fail)
 	bad_data := []byte("This file was overwritten after Bob was revoked")
 	bob.StoreFile("file2", bad_data)
 
-
+	//Bob tries to append to file (should fail)
 	if err = bob.AppendFile("file2", []byte(" overwriting after revocation")); err == nil {
 		t.Error("Successfully appended to file", err)
 	} else {
 		t.Log("Failed to append to file: ", err)
 	}
 
+	//Bob tries to share file (should fail)
+	_, err = bob.ShareFile("file2", "eddie")
+	if err == nil {
+		t.Error("Successfully shared file with eddie")
+		return
+	} else {
+		t.Log("Correctly errored when trying to share file after being revoked: ", err)
+	}
+	_ = eddie
+	
 	//Alice loads the file again (should not be overwritten)
 	file_alice, err = alice.LoadFile("file1")
 	if err != nil {
@@ -1315,4 +1329,34 @@ func TestInvalidBehavior(t *testing.T) {
 		t.Log("Correctly errored when trying to revoke user who is not a direct child: ", err)
 	}
 
+}
+
+func TestFilenameLengthLeak(t *testing.T) {
+	userlib.SetDebugStatus(true)
+
+	clear()
+	alice, _ := InitUser("alice", "fubar")
+	alice.StoreFile("a", []byte("This is a test"))
+	datastore := userlib.DatastoreGetMap()
+	sum := 0
+	for _, value := range datastore {
+		sum = sum + len(value)
+	}
+	shortLen := sum
+
+	clear()
+	alice, _ = InitUser("alice", "fubar")
+	alice.StoreFile(strings.Repeat("a", 10000), []byte("This is a test"))
+	datastore = userlib.DatastoreGetMap()
+	sum = 0
+	for _, value := range datastore {
+		sum = sum + len(value)
+	}
+	longLen := sum
+
+	t.Logf("Short len: %d, Long len: %d", shortLen, longLen)
+	if shortLen != longLen {
+		t.Error("Filename length has been leaked to datastore!")
+		return
+	}
 }
