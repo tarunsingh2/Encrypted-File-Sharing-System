@@ -1189,3 +1189,130 @@ func TestShareRevokeSequence(t *testing.T) {
 	t.Log(string(file_alice))
 
 }
+
+func TestInvalidBehavior(t *testing.T) {
+	clear()
+	alice, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Initializing user failed: ", err)
+		return
+	}
+	bob, err := InitUser("bob", "fubar")
+	if err != nil {
+		t.Error("Initializing user failed: ", err)
+		return
+	}
+	darren, err := InitUser("darren", "fubar")
+	if err != nil {
+		t.Error("Initializing user failed: ", err)
+		return
+	}
+	eddie, err := InitUser("eddie", "fubar")
+	if err != nil {
+		t.Error("Initializing user failed: ", err)
+		return
+	}
+
+	alice.StoreFile("file1", []byte("This is Alice's test file"))
+	bob.StoreFile("file2", []byte("This is Bob's test file"))
+	darren.StoreFile("file3", []byte("This is Darren's test file"))
+
+	//GetUser
+	_, err = GetUser("charlie", "fubar")
+	if err == nil {
+		t.Error("Got user that wasn't initialized")
+		return
+	} else {
+		t.Log("Correctly errored on getting uninitialized user: ", err)
+	}
+	_, err = GetUser("alice", "foobar")
+	if err == nil {
+		t.Error("Got user with wrong password")
+		return
+	} else {
+		t.Log("Correctly errored on getting user with wrong password: ", err)
+	}
+
+	//AppendFile
+	if err = alice.AppendFile("this file does not exist", []byte("test data")); err == nil {
+		t.Error("Appended to file that doesn't exist")
+		return
+	} else {
+		t.Log("Correctly errored on appending to invalid file: ", err)
+	}
+
+	//ShareFile
+	_, err = alice.ShareFile("this file does not exist", "bob")
+	if err == nil {
+		t.Error("Shared file that doesn't exist")
+		return
+	} else {
+		t.Log("Correctly errored on sharing file that does not exist: ", err)
+	}
+
+	_, err = alice.ShareFile("file1", "charlie")
+	if err == nil {
+		t.Error("Shared file with user that doesn't exist")
+		return
+	} else {
+		t.Log("Correctly errored on sharing file with user that doesn't exist: ", err)
+	}
+
+	magic_string_alice, err := alice.ShareFile("file1", "darren")
+	if err != nil {
+		t.Error("Failed to share file with Darren: ", err)
+		return
+	}
+
+	magic_string_bob, err := bob.ShareFile("file2", "darren")
+	if err != nil {
+		t.Error("Failed to share file with Darren: ", err)
+		return
+	}
+
+	if err = darren.ReceiveFile("fileShared", "bob", magic_string_alice); err == nil {
+		t.Error("Access token was not from sender")
+		return
+	} else {
+		t.Log("Correctly errored when receiving access token not from sender: ", err)
+	}
+
+	if err = darren.ReceiveFile("fileShared", "bob", magic_string_bob); err != nil {
+		t.Error("Failed to receive file: ", err)
+		return
+	}
+
+	if err = darren.ReceiveFile("fileShared", "alice", magic_string_alice); err == nil {
+		t.Error("Incorrectly received file with same name")
+		return
+	} else {
+		t.Log("Correctly errored when receiving file with existing name: ", err)
+	}
+
+	//RevokeFile
+	if err = alice.RevokeFile("file1", "eddie"); err == nil {
+		t.Error("Revoked file from user that does not have access")
+		return
+	} else {
+		t.Log("Correctly errored when trying to revoke user that does not have access: ", err)
+	}
+
+	magic_string_darren, err := darren.ShareFile("fileShared", "eddie")
+	if err != nil {
+		t.Error("Failed to share file with Eddie: ", err)
+		return
+	}
+
+	if err = eddie.ReceiveFile("fileSharedEddie", "darren", magic_string_darren); err != nil {
+		t.Error("Failed to receive file: ", err)
+		return
+	}
+
+	if err = alice.RevokeFile("file1", "eddie"); err == nil {
+		t.Error("Revoked file from user who is not a direct child")
+		return
+	} else {
+		t.Log("Correctly errored when trying to revoke user who is not a direct child: ", err)
+	}
+
+}
