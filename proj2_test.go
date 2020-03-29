@@ -1522,3 +1522,31 @@ func TestFilenameLengthLeak(t *testing.T) {
 	}
 }
 
+func TestSharingLongUsername(t *testing.T) {
+	clear()
+
+	alice, err := InitUser(strings.Repeat("a", 1000), "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user: ", err)
+		return
+	}
+	bob, err := InitUser("bob", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user: ", err)
+		return
+	}
+
+	data := []byte("This is a test")
+	alice.StoreFile("file1", data)
+
+	magic_string, err := alice.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share file: ", err)
+		return
+	}
+
+	if err = bob.ReceiveFile("file2", "alice", magic_string); err != nil {
+		t.Error("Failed to receive file: ", err)
+		return
+	}
+}
