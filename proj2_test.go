@@ -9,7 +9,7 @@ import (
 	"github.com/cs161-staff/userlib"
 	_"encoding/json"
 	_ "encoding/hex"
-	_"github.com/google/uuid"
+	"github.com/google/uuid"
 	"strings"
 	_ "errors"
 	_ "strconv"
@@ -262,6 +262,41 @@ func TestStorage2(t *testing.T) {
 	}
 }
 
+// Tests old version of a file
+func TestFakeFile(t *testing.T) {
+	clear()
+	old_map := make(map[uuid.UUID][]byte)
+	t.Log("Test if alice loads a file added by an attacker")
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	store_v1 := []byte("This is a test")
+	u.StoreFile("file1", store_v1)
+
+	data_store := userlib.DatastoreGetMap()
+	for key, value := range data_store {
+		if 20 < len(value) && len(value) < 200 {
+			old_map[key] = value
+		}
+	}
+
+	store_v2 := []byte("This is not a test")
+	u.StoreFile("file1", store_v2)
+
+	for key, value := range old_map {
+		data_store[key] = value
+	}
+
+	_, err2 := u.LoadFile("file1")
+	if err2 != nil {
+		t.Error("Load failed", err2)
+		return
+	}
+}
+
 // Tests if bob can access alice's files
 func TestAccess(t *testing.T) {
 	clear()
@@ -280,6 +315,52 @@ func TestAccess(t *testing.T) {
 
 	v := []byte("This is a test")
 	alice.StoreFile("file1", v)
+
+	_, err2 := bob.LoadFile("file1")
+	if err2 == nil {
+		t.Error("Bob should not be able to access alice's files", err2)
+		return
+	}
+}
+
+// Tests if bob can access alice's files when switched
+func TestBadAccess(t *testing.T) {
+	clear()
+	saved_map := make(map[uuid.UUID][]byte)
+	var saved_user uuid.UUID
+	data_store := userlib.DatastoreGetMap()
+	t.Log("File access tests corrupted")
+	alice, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	// Getting Alice's user key
+	for key, value := range data_store {
+		if len(value) > 20 {
+			saved_user = key
+		}
+	}
+
+	v := []byte("This is a test")
+	alice.StoreFile("file1", v)
+
+	for key, value := range data_store {
+		saved_map[key] = value
+	}
+
+	bob, err := InitUser("bob", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	for key, value := range data_store {
+		if len(saved_map[key]) == 0 && len(value) > 20 {
+			data_store[key] = data_store[saved_user]
+		}
+	}
 
 	_, err2 := bob.LoadFile("file1")
 	if err2 == nil {
