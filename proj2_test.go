@@ -766,7 +766,164 @@ func TestShare4(t *testing.T) {
 		t.Error("Shared file is not the same", v, vNew)
 		return
 	}
+}
 
+func TestShare5(t *testing.T) {
+	clear()
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	u2, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+	u3, err3 := InitUser("chris", "funbar")
+	if err3 != nil {
+		t.Error("Failed to initialize chris", err3)
+		return
+	}
+
+	v := []byte("This is a test")
+	u.StoreFile("file1", v)
+
+	var v2, v3 []byte
+	var magic_string string
+
+	v, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+		return
+	}
+
+	// Sharing to bob
+	magic_string, err = u.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+		return
+	}
+	err = u2.ReceiveFile("file2", "alice", magic_string)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+
+	v2, err = u2.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+		return
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
+	err = u3.ReceiveFile("file1", "alice", magic_string)
+	if err == nil {
+		t.Error("Chris should not be able to receive file ->", err)
+		return
+	}
+	v3, err = u3.LoadFile("file2")
+	if err == nil {
+		t.Error("Chris should not be able to load file ->", err)
+		return
+	}
+
+	// Sharing to chris
+	magic_string, err = u.ShareFile("file1", "chris")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+		return
+	}
+
+	// Wrong magic_string to receive
+	err = u3.ReceiveFile("file2", "alice", "gibberish")
+	if err == nil {
+		t.Error("Should not receive file", err)
+		return
+	}
+	v3, err = u3.LoadFile("file2")
+	if err == nil {
+		t.Error("Should not load file", err)
+		return
+	}
+
+	// Correct receive
+	err = u3.ReceiveFile("file2", "alice", magic_string)
+	if err != nil {
+		t.Error("Failed to receive", err)
+		return
+	}
+	v3, err = u3.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to load", err)
+		return
+	}
+	if !reflect.DeepEqual(v, v3) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
+	// Sharing file's that's not owned by chris
+	magic_string, err = u3.ShareFile("file2", "bob")
+	if err == nil {
+		t.Error("Should not share file that's not user's (bob) ->", err)
+		return
+	}
+	magic_string, err = u3.ShareFile("file2", "alice")
+	if err == nil {
+		t.Error("Should not share file that's not user's (alice) ->", err)
+		return
+	}
+
+	// Revoke test
+	if err = u.RevokeFile("file1", "bob"); err != nil {
+		t.Error("Failed to revoke file", err)
+		return
+	}
+	err = u2.ReceiveFile("file3", "alice", magic_string)
+	if err == nil {
+		t.Error("Should not receive file", err)
+		return
+	}
+	v3, err = u2.LoadFile("file2")
+	if err == nil {
+		t.Error("Should not load file", err)
+		return
+	}
+
+	// Chris still gets the correct file
+	v3, err = u3.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to load", err)
+		return
+	}
+	if !reflect.DeepEqual(v, v3) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
+	// Should not be able to share to Bob
+	magic_string, err = u3.ShareFile("file2", "bob")
+	if err == nil {
+		t.Error("Should not share file that's not user's (bob) ->", err)
+	}
+	err = u2.ReceiveFile("file3", "chris", magic_string)
+	if err == nil {
+		t.Error("Should not be able to receive", err)
+
+	}
+	v2, err = u2.LoadFile("file3")
+	if err == nil {
+		t.Error("Should not load file", err)
+
+	}
+	if reflect.DeepEqual(v2, v3) {
+		t.Error("Chris gave Bob access to a revoked file ->", v, v2)
+		return
+	}
 }
 
 func TestRevoke(t *testing.T) {
