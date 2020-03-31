@@ -663,11 +663,21 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 		listUUID := bytesToUUID(uuidHMAC)
 		encryptedList, ok := userlib.DatastoreGet(listUUID)
 		if ok {
-			//return errors.New("User's shared users list corrupted")
-			marshalledStruct, err := userdata.VerifyThenDecrypt(encryptedList, queue[0])
+			if len(encryptedList) < 512 {
+				return errors.New("Shared user list corrupted")
+			}
+			
+			cipherMsg, cipherKeys := encryptedList[:len(encryptedList)-512], encryptedList[len(encryptedList)-512:]
+			plaintextKeys, err := userdata.VerifyThenDecrypt([]byte(cipherKeys), queue[0])
 			if err != nil {
 				return err
 			}
+			msgEncKey, msgHMACKey := plaintextKeys[:16], plaintextKeys[16:]
+			marshalledStruct, err := MACThenDecrypt([]byte(cipherMsg), msgEncKey, msgHMACKey)
+			if err != nil {
+				return err
+			}
+
 			var newUserList []string
 			if err = json.Unmarshal(marshalledStruct, &newUserList); err != nil {
 				return err
@@ -759,10 +769,17 @@ func StoreSharedUsersList(userdata *User, originalOwner string, filename string)
 	if err != nil {
 		return err
 	}
-	encryptedList, err := userdata.EncryptThenSign(marshalledList, originalOwner)
+	msgEncKey, msgHMACKey := userlib.RandomBytes(16), userlib.RandomBytes(16)
+	ciphertextMsg, err := EncryptThenMAC(marshalledList, msgEncKey, msgHMACKey)
 	if err != nil {
 		return err
 	}
+
+	ciphertextKeys, err := userdata.EncryptThenSign(append(msgEncKey, msgHMACKey...), originalOwner)
+	if err != nil {
+		return err
+	}
+	encryptedList := append(ciphertextMsg, ciphertextKeys...)
 
 	//Store on datastore
 	userlib.DatastoreSet(listUUID, encryptedList)
