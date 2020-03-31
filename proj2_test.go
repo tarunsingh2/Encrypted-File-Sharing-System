@@ -789,7 +789,7 @@ func TestShare5(t *testing.T) {
 	v := []byte("This is a test")
 	u.StoreFile("file1", v)
 
-	var v2, v3 []byte
+	var v2, v3, v_test []byte
 	var magic_string string
 
 	v, err = u.LoadFile("file1")
@@ -866,19 +866,42 @@ func TestShare5(t *testing.T) {
 		return
 	}
 
-	// Sharing file's that's not owned by chris
+	// Sharing files back to bob and alice from chris
 	magic_string, err = u3.ShareFile("file2", "bob")
-	if err == nil {
-		t.Error("Should not share file that's not user's (bob) ->", err)
+	if err != nil {
+		t.Error("Could not share ->", err)
 		return
 	}
 	magic_string, err = u3.ShareFile("file2", "alice")
-	if err == nil {
-		t.Error("Should not share file that's not user's (alice) ->", err)
+	if err != nil {
+		t.Error("Could not share ->", err)
 		return
 	}
 
-	// Revoke test
+	// Chris revokes Alice's access
+	if err = u3.RevokeFile("file2", "alice"); err == nil {
+		t.Error("Should not be able revoke file", err)
+		return
+	}
+
+	// Alice should be able to still access her file
+	v_test, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+		return
+	}
+	if !reflect.DeepEqual(v_test, v) {
+		t.Error("Alice did not get the correct file after getting her own file revoked", v, v_test)
+		return
+	}
+
+	// Bob should not be able to revoke Chris's access
+	if err = u2.RevokeFile("file2", "chris"); err == nil {
+		t.Error("Should not be able revoke file", err)
+		return
+	}
+
+	// Bob get his access revoked test
 	if err = u.RevokeFile("file1", "bob"); err != nil {
 		t.Error("Failed to revoke file", err)
 		return
@@ -905,7 +928,7 @@ func TestShare5(t *testing.T) {
 		return
 	}
 
-	// Should not be able to share to Bob
+	// Bob should not be able to gain access again
 	magic_string, err = u3.ShareFile("file2", "bob")
 	if err == nil {
 		t.Error("Should not share file that's not user's (bob) ->", err)
@@ -1392,7 +1415,7 @@ func TestShareRevokeSequence(t *testing.T) {
 		return
 	} else {
 		t.Log("Correctly errored when trying to share file after being revoked: ", err)
-	}	
+	}
 
 	//Darren tries to access the file (should fail)
 	file_darren, err = darren.LoadFile("file4")
@@ -1440,7 +1463,7 @@ func TestShareRevokeSequence(t *testing.T) {
 	if err != nil {
 		t.Error("Failed to share file again with charlie: ", err)
 		return
-	} 
+	}
 	if err = charlie.ReceiveFile("file3New", "alice", magic_string); err != nil {
 		t.Error("Failed to receive file after being revoked: ", err)
 		return
