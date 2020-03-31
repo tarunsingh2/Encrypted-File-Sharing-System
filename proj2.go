@@ -518,6 +518,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string,
 	magic_string string) error {
+
 	//Hash filename
 	filenameHash, err := userlib.HMACEval(make([]byte, 16), []byte(filename))
 	if err != nil {
