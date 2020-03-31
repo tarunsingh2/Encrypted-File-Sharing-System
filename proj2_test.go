@@ -1715,7 +1715,7 @@ func TestSharingLongUsername(t *testing.T) {
 		return
 	}
 
-	if err = bob.ReceiveFile("file2", "alice", magic_string); err != nil {
+	if err = bob.ReceiveFile("file2", strings.Repeat("a", 1000), magic_string); err != nil {
 		t.Error("Failed to receive file: ", err)
 		return
 	}
