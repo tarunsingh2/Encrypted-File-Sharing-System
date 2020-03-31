@@ -490,10 +490,19 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	}
 
 	//Encrypt and sign UUID + original owner ---> magic_string
-	magic_bytes, err := userdata.EncryptThenSign(append(fileUUID[:], []byte(originalOwner)...), recipient)
+	msg := append(fileUUID[:], []byte(originalOwner)...)
+	msgEncKey, msgHMACKey := userlib.RandomBytes(16), userlib.RandomBytes(16)
+	ciphertextMsg, err := EncryptThenMAC(msg, msgEncKey, msgHMACKey)
 	if err != nil {
 		return "", err
 	}
+
+	ciphertextKeys, err := userdata.EncryptThenSign(append(msgEncKey, msgHMACKey...), recipient)
+	if err != nil {
+		return "", err
+	}
+
+	magic_bytes := append(ciphertextMsg, ciphertextKeys...)
 	magic_string = string(magic_bytes)
 
 	//Add recipient to shared users map in User struct
@@ -540,11 +549,21 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	}
 
 	//Verify and decrypt magic_string ----> UUID + original owner
-	plaintext, err := userdata.VerifyThenDecrypt([]byte(magic_string), sender)
+	if len(magic_string) < 512 {
+		return errors.New("Magic string corrupted")
+	}
+	magic_stringMsg, magic_stringKeys := magic_string[:len(magic_string)-512], magic_string[len(magic_string)-512:]
+	plaintextKeys, err := userdata.VerifyThenDecrypt([]byte(magic_stringKeys), sender)
 	if err != nil {
 		return err
 	}
-	fileUUID, originalOwner := bytesToUUID(plaintext[:16]), string(plaintext[16:])
+	msgEncKey, msgHMACKey := plaintextKeys[:16], plaintextKeys[16:]
+	plaintextMsg, err := MACThenDecrypt([]byte(magic_stringMsg), msgEncKey, msgHMACKey)
+	if err != nil {
+		return err
+	}
+
+	fileUUID, originalOwner := bytesToUUID(plaintextMsg[:16]), string(plaintextMsg[16:])
 
 	//Get symmetric keys from datastore (could be signed by either sender or original owner)
 	fileEncKey, fileHMACKey, err := userdata.GetKeys(sender, fileUUID)
