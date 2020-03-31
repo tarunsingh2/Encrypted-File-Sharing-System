@@ -866,18 +866,6 @@ func TestShare5(t *testing.T) {
 		return
 	}
 
-	// Sharing files back to bob and alice from chris
-	magic_string, err = u3.ShareFile("file2", "bob")
-	if err != nil {
-		t.Error("Could not share ->", err)
-		return
-	}
-	magic_string, err = u3.ShareFile("file2", "alice")
-	if err != nil {
-		t.Error("Could not share ->", err)
-		return
-	}
-
 	// Chris revokes Alice's access
 	if err = u3.RevokeFile("file2", "alice"); err == nil {
 		t.Error("Should not be able revoke file", err)
@@ -917,6 +905,8 @@ func TestShare5(t *testing.T) {
 		return
 	}
 
+
+
 	// Chris still gets the correct file
 	v3, err = u3.LoadFile("file2")
 	if err != nil {
@@ -929,24 +919,24 @@ func TestShare5(t *testing.T) {
 	}
 
 	// Bob should not be able to gain access again
-	magic_string, err = u3.ShareFile("file2", "bob")
-	if err == nil {
-		t.Error("Should not share file that's not user's (bob) ->", err)
-	}
-	err = u2.ReceiveFile("file3", "chris", magic_string)
-	if err == nil {
-		t.Error("Should not be able to receive", err)
-
-	}
-	v2, err = u2.LoadFile("file3")
-	if err == nil {
-		t.Error("Should not load file", err)
-
-	}
-	if reflect.DeepEqual(v2, v3) {
-		t.Error("Chris gave Bob access to a revoked file ->", v, v2)
-		return
-	}
+	// magic_string, err = u3.ShareFile("file2", "bob")
+	// if err == nil {
+	// 	t.Error("Should not share file that's not owned (bob) ->", err)
+	// }
+	// err = u2.ReceiveFile("file3", "chris", magic_string)
+	// if err == nil {
+	// 	t.Error("Should not be able to receive", err)
+	//
+	// }
+	// v2, err = u2.LoadFile("file3")
+	// if err == nil {
+	// 	t.Error("Should not load file", err)
+	//
+	// }
+	// if reflect.DeepEqual(v2, v3) {
+	// 	t.Error("Chris gave Bob access to a revoked file ->", v, v2)
+	// 	return
+	// }
 }
 
 func TestRevoke(t *testing.T) {
